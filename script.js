@@ -103,9 +103,7 @@ function connectWebSocket() {
     ws.onopen = function() {
         console.log('Connected to POPCHAT server');
         updateConnectionStatus(true);
-        
-        // Update active users count
-        updateActiveUsers();
+        updateActiveUsers(); // update active users count
     };
     
     ws.onclose = function() {
@@ -121,28 +119,16 @@ function connectWebSocket() {
         updateConnectionStatus(false);
     };
     
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+
     ws.onmessage = function(event) {
         const data = JSON.parse(event.data);
         handleWebSocketMessage(data);
     };
 }
-    ws.onclose = function() {
-        console.log('Disconnected from server');
-        updateConnectionStatus(false);
-        
-        // Try to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
-    };
-    
-    ws.onerror = function(error) {
-        console.error('WebSocket error:', error);
-        updateConnectionStatus(false);
-    };
-    
-    ws.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        handleWebSocketMessage(data);
-    };
 
 // Handle WebSocket messages
 function handleWebSocketMessage(data) {
