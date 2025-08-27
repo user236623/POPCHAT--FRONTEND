@@ -226,13 +226,16 @@ h1 {
 }
 
 .system-message {
-    background: rgba(76, 175, 80, 0.1);
-    color: #aaa;
-    padding: 10px 15px;
-    border-radius: 10px;
-    text-align: center;
-    font-style: italic;
-    margin: 10px 0;
+  background: rgba(76, 175, 80, 0.1);
+  color: #aaa;
+  padding: 10px 15px;
+  border-radius: 10px;
+  text-align: center;
+  font-style: italic;
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
 }
 
 .message.highlight {
