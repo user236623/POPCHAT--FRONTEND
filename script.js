@@ -95,7 +95,7 @@ function closeDonationModal() {
 
 // Connect to WebSocket server
 function connectWebSocket() {
-    // Use your Render backend URL directly - FIXED TYPO
+    // Use your Render backend URL directly
     const wsUrl = 'wss://popchat-eqgk.onrender.com';
     
     ws = new WebSocket(wsUrl);
@@ -103,9 +103,7 @@ function connectWebSocket() {
     ws.onopen = function() {
         console.log('Connected to POPCHAT server');
         updateConnectionStatus(true);
-        
-        // Update active users count
-        updateActiveUsers();
+        updateActiveUsers(); // update active users count
     };
     
     ws.onclose = function() {
@@ -121,6 +119,11 @@ function connectWebSocket() {
         updateConnectionStatus(false);
     };
     
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+
     ws.onmessage = function(event) {
         const data = JSON.parse(event.data);
         handleWebSocketMessage(data);
