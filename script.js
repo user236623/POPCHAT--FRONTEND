@@ -43,6 +43,8 @@ let progressInterval = null;
 let messageCounter = 0;
 let messageElements = {};
 let ws = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 // Initialize the app
 function init() {
@@ -81,6 +83,9 @@ function init() {
     
     // Initialize with online status
     updateConnectionStatus(true);
+    
+    // Focus on username input
+    usernameInput.focus();
 }
 
 // Show donation modal
@@ -95,44 +100,75 @@ function closeDonationModal() {
 
 // Connect to WebSocket server
 function connectWebSocket() {
-    // Use your Render backend URL directly
-    const wsUrl = 'wss://popchat-eqgk.onrender.com';
-    
-    ws = new WebSocket(wsUrl);
-    
-    ws.onopen = function() {
-        console.log('Connected to POPCHAT server');
-        updateConnectionStatus(true);
-        updateActiveUsers(); // update active users count
-    };
-    
-    ws.onclose = function() {
-        console.log('Disconnected from server');
-        updateConnectionStatus(false);
+    try {
+        // Use secure WebSocket for HTTPS, regular for HTTP
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.hostname;
+        const port = window.location.port ? `:${window.location.port}` : '';
         
-        // Try to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
-    };
-    
-    ws.onerror = function(error) {
-        console.error('WebSocket error:', error);
+        // For local development vs production
+        const wsUrl = host === 'localhost' 
+            ? `${protocol}//localhost:3000` 
+            : `wss://popchat-eqgk.onrender.com`;
+        
+        console.log('Connecting to WebSocket at:', wsUrl);
+        
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = function() {
+            console.log('✅ Connected to server');
+            reconnectAttempts = 0;
+            updateConnectionStatus(true);
+            
+            // Update active users count
+            updateActiveUsers();
+            
+            // If we have a username set, send it to the server
+            if (currentUser) {
+                sendWebSocketMessage('set_username', { username: currentUser });
+            }
+        };
+        
+        ws.onclose = function() {
+            console.log('❌ Disconnected from server');
+            updateConnectionStatus(false);
+            
+            // Try to reconnect with exponential backoff
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                const delay = Math.pow(2, reconnectAttempts) * 1000;
+                reconnectAttempts++;
+                console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+                
+                setTimeout(connectWebSocket, delay);
+            }
+        };
+        
+        ws.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            updateConnectionStatus(false);
+        };
+        
+        ws.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            } catch (error) {
+                console.error('Error parsing message:', error);
+            }
+        };
+    } catch (error) {
+        console.error('Failed to connect to WebSocket:', error);
         updateConnectionStatus(false);
-    };
-    
-    ws.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        handleWebSocketMessage(data);
-    };
-
-    ws.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        handleWebSocketMessage(data);
-    };
+    }
 }
 
 // Handle WebSocket messages
 function handleWebSocketMessage(data) {
     switch (data.type) {
+        case 'welcome':
+            console.log('Server:', data.message);
+            break;
+            
         case 'active_users':
             updateActiveUsersCount(data.count);
             break;
@@ -152,18 +188,30 @@ function handleWebSocketMessage(data) {
         case 'error':
             handleError(data.message);
             break;
+            
+        case 'ping':
+            // Respond to ping
+            sendWebSocketMessage('pong');
+            break;
+            
+        default:
+            console.log('Unknown message type:', data.type);
     }
 }
 
 // Update active users count
 function updateActiveUsersCount(count) {
-    activeCountElement.textContent = `${count}+ Active Now`;
+    if (activeCountElement) {
+        activeCountElement.textContent = `${count}+ Active Now`;
+    }
 }
 
 // Handle match found
 function handleMatchFound(partnerData) {
     clearInterval(progressInterval);
-    progressBar.style.width = '100%';
+    if (progressBar) {
+        progressBar.style.width = '100%';
+    }
     
     partner = partnerData.username;
     isConnected = true;
@@ -183,7 +231,7 @@ function handleIncomingMessage(data) {
         text: data.text,
         type: 'received',
         timestamp: new Date(data.timestamp),
-        id: data.id
+        id: data.id || Date.now()
     };
     
     addMessage(messageData.sender, messageData.text, messageData.type, null, messageData.id);
@@ -200,26 +248,40 @@ function handleUserLeft() {
 // Handle error
 function handleError(message) {
     console.error('Server error:', message);
-    alert(`Error: ${message}`);
+    // Show error to user
+    addMessage('System', `Error: ${message}`, 'system');
 }
 
 // Send WebSocket message
 function sendWebSocketMessage(type, data = {}) {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type,
-            ...data
-        }));
+        try {
+            ws.send(JSON.stringify({
+                type,
+                ...data,
+                timestamp: Date.now()
+            }));
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
+    } else {
+        console.warn('WebSocket is not connected');
+        updateConnectionStatus(false);
     }
 }
 
 // Monitor internet connection
 function monitorConnection() {
     window.addEventListener('online', function() {
+        console.log('Internet connection restored');
         updateConnectionStatus(true);
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            connectWebSocket();
+        }
     });
     
     window.addEventListener('offline', function() {
+        console.log('Internet connection lost');
         updateConnectionStatus(false);
     });
 }
@@ -264,12 +326,12 @@ function autoResize() {
 function handleSwipe() {
     const username = usernameInput.value.trim();
     if (!username) {
-        alert('Please enter a username');
+        showError('Please enter a username');
         return;
     }
     
     if (username.length < 3 || username.length > 20) {
-        alert('Username must be between 3 and 20 characters');
+        showError('Username must be between 3 and 20 characters');
         return;
     }
     
@@ -284,6 +346,20 @@ function handleSwipe() {
     showPage('dashboard');
 }
 
+// Show error message
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'system-message error';
+    errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+    
+    const container = document.querySelector('.container');
+    container.appendChild(errorDiv);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 3000);
+}
+
 // Start chat - go to waiting page
 function startChat() {
     usernameDisplay.textContent = currentUser;
@@ -293,7 +369,9 @@ function startChat() {
     let progress = 0;
     progressInterval = setInterval(() => {
         progress += 0.5;
-        progressBar.style.width = `${progress}%`;
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
         
         if (progress >= 100) {
             clearInterval(progressInterval);
@@ -310,7 +388,7 @@ function sendMessage() {
     if (!message || !isConnected) return;
     
     if (message.length > 500) {
-        alert('Message is too long (max 500 characters)');
+        showError('Message is too long (max 500 characters)');
         return;
     }
     
@@ -321,7 +399,7 @@ function sendMessage() {
         type: 'sent',
         timestamp: new Date(),
         replyTo: replyingTo,
-        id: messageCounter++
+        id: Date.now()
     };
     
     addMessage(messageData.sender, messageData.text, messageData.type, messageData.replyTo, messageData.id);
@@ -365,7 +443,9 @@ function rematch() {
     let progress = 0;
     progressInterval = setInterval(() => {
         progress += 0.5;
-        progressBar.style.width = `${progress}%`;
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
         
         if (progress >= 100) {
             clearInterval(progressInterval);
@@ -386,6 +466,11 @@ function goHome() {
 
 // Export chat history
 function exportChatHistory() {
+    if (chatHistory.length === 0) {
+        showError('No chat history to export');
+        return;
+    }
+    
     let exportData = `POPCHAT Conversation History\n`;
     exportData += `Date: ${new Date().toLocaleString()}\n`;
     exportData += `Participants: ${currentUser} and ${partner}\n`;
@@ -410,7 +495,9 @@ function exportChatHistory() {
 // Cancel reply
 function cancelReply() {
     replyingTo = null;
-    replyIndicator.style.display = 'none';
+    if (replyIndicator) {
+        replyIndicator.style.display = 'none';
+    }
 }
 
 // Highlight a message that was replied to
@@ -440,7 +527,7 @@ function addMessage(sender, text, type, replyTo = null, messageId = null) {
     }
     
     if (type === 'system') {
-        messageElement.textContent = text;
+        messageElement.innerHTML = `<i class="fas fa-info-circle"></i> ${text}`;
     } else {
         let messageHTML = '';
         
@@ -472,67 +559,64 @@ function addMessage(sender, text, type, replyTo = null, messageId = null) {
         // Add long press event for reply (only for received messages)
         if (type === 'received') {
             let pressTimer;
-            messageElement.addEventListener('mousedown', function() {
-                pressTimer = window.setTimeout(function() {
+            
+            const startPress = () => {
+                pressTimer = setTimeout(() => {
                     replyingTo = { 
                         sender: sender, 
                         text: text,
                         id: messageId
                     };
-                    replyUsername.textContent = `${sender}`;
-                    replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
-                    replyIndicator.style.display = 'flex';
+                    if (replyUsername) replyUsername.textContent = `${sender}`;
+                    if (replyText) replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
+                    if (replyIndicator) replyIndicator.style.display = 'flex';
                 }, 500);
-            });
+            };
             
-            messageElement.addEventListener('mouseup', function() {
+            const endPress = () => {
                 clearTimeout(pressTimer);
-            });
+            };
             
-            messageElement.addEventListener('touchstart', function() {
-                pressTimer = window.setTimeout(function() {
-                    replyingTo = { 
-                        sender: sender, 
-                        text: text,
-                        id: messageId
-                    };
-                    replyUsername.textContent = `${sender}`;
-                    replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
-                    replyIndicator.style.display = 'flex';
-                }, 500);
-            });
-            
-            messageElement.addEventListener('touchend', function() {
-                clearTimeout(pressTimer);
-            });
+            messageElement.addEventListener('mousedown', startPress);
+            messageElement.addEventListener('mouseup', endPress);
+            messageElement.addEventListener('mouseleave', endPress);
+            messageElement.addEventListener('touchstart', startPress);
+            messageElement.addEventListener('touchend', endPress);
+            messageElement.addEventListener('touchcancel', endPress);
         }
     }
     
-    chatMessages.appendChild(messageElement);
-    
-    // Scroll to bottom
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (chatMessages) {
+        chatMessages.appendChild(messageElement);
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
 }
 
 // Show specific page
 function showPage(pageName) {
     // Hide all pages
     for (const page in pages) {
-        pages[page].classList.remove('active');
+        if (pages[page]) {
+            pages[page].classList.remove('active');
+        }
     }
     
     // Show requested page
-    pages[pageName].classList.add('active');
+    if (pages[pageName]) {
+        pages[pageName].classList.add('active');
+    }
     
     // Focus on input if we're on the chat page
     if (pageName === 'chat') {
         setTimeout(() => {
-            messageInput.focus();
+            if (messageInput) messageInput.focus();
         }, 100);
     }
     
     // Reset progress bar if leaving waiting page
-    if (pageName !== 'waiting') {
+    if (pageName !== 'waiting' && progressBar) {
         clearInterval(progressInterval);
         progressBar.style.width = '0%';
     }
@@ -540,3 +624,10 @@ function showPage(pageName) {
 
 // Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', init);
+
+// Handle page refresh/closing
+window.addEventListener('beforeunload', () => {
+    if (isConnected) {
+        sendWebSocketMessage('leave_chat');
+    }
+});
