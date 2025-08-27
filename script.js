@@ -1,202 +1,556 @@
-// ====== PAGE HANDLING ======
+// DOM Elements
 const pages = {
-    entrance: document.getElementById("entrance-page"),
-    dashboard: document.getElementById("dashboard-page"),
-    waiting: document.getElementById("waiting-page"),
-    chat: document.getElementById("chat-page"),
-    disconnected: document.getElementById("disconnected-page")
+    entrance: document.getElementById('entrance-page'),
+    dashboard: document.getElementById('dashboard-page'),
+    waiting: document.getElementById('waiting-page'),
+    chat: document.getElementById('chat-page'),
+    disconnected: document.getElementById('disconnected-page')
 };
 
-function showPage(pageId) {
-    Object.values(pages).forEach(page => page.classList.remove("active"));
-    pages[pageId].classList.add("active");
-}
+const usernameInput = document.getElementById('username-input');
+const swipeBtn = document.getElementById('swipe-btn');
+const startChatBtn = document.getElementById('start-chat-btn');
+const usernameDisplay = document.getElementById('username-display');
+const dashboardUsername = document.getElementById('dashboard-username');
+const chatMessages = document.getElementById('chat-messages');
+const messageInput = document.getElementById('message-input');
+const sendBtn = document.getElementById('send-btn');
+const leaveBtn = document.getElementById('leave-btn');
+const partnerName = document.getElementById('partner-name');
+const leftMessage = document.getElementById('left-message');
+const rematchBtn = document.getElementById('rematch-btn');
+const homeBtn = document.getElementById('home-btn');
+const donationBtn = document.getElementById('donation-btn');
+const exportChatBtn = document.getElementById('export-chat-btn');
+const replyIndicator = document.getElementById('reply-indicator');
+const replyUsername = document.getElementById('reply-username');
+const replyText = document.getElementById('reply-text');
+const closeReply = document.getElementById('close-reply');
+const connectionStatus = document.getElementById('connection-status');
+const progressBar = document.getElementById('progress-bar');
+const activeCountElement = document.getElementById('entrance-active-count');
+const qrModal = document.getElementById('qr-modal');
+const closeModal = document.querySelector('.close');
 
-// ====== ELEMENTS ======
-const swipeBtn = document.getElementById("swipe-btn");
-const usernameInput = document.getElementById("username-input");
-const dashboardUsername = document.getElementById("dashboard-username");
-const startChatBtn = document.getElementById("start-chat-btn");
-const usernameDisplay = document.getElementById("username-display");
-const partnerName = document.getElementById("partner-name");
-const sendBtn = document.getElementById("send-btn");
-const messageInput = document.getElementById("message-input");
-const chatMessages = document.getElementById("chat-messages");
-const leaveBtn = document.getElementById("leave-btn");
-const rematchBtn = document.getElementById("rematch-btn");
-const homeBtn = document.getElementById("home-btn");
-const leftMessage = document.getElementById("left-message");
-
-// Connection status banner
-let connectionStatus = document.createElement("div");
-connectionStatus.className = "connection-status";
-document.body.appendChild(connectionStatus);
-
-// ====== STATE ======
-let currentUser = "";
+// App State
+let currentUser = '';
+let partner = '';
 let isConnected = false;
-let socket = null;
+let replyingTo = null;
+let chatHistory = [];
+let waitingTimer = null;
+let progressInterval = null;
+let messageCounter = 0;
+let messageElements = {};
+let ws = null;
 
-// ====== PAGE FLOW ======
-swipeBtn.addEventListener("click", () => {
-    const username = usernameInput.value.trim();
-    if (username.length === 0) {
-        alert("Please enter a username");
-        return;
+// Initialize the app
+function init() {
+    // Check if we have a username in localStorage
+    const savedUsername = localStorage.getItem('chatUsername');
+    if (savedUsername) {
+        usernameInput.value = savedUsername;
     }
-    currentUser = username;
-    dashboardUsername.textContent = username;
-    showPage("dashboard");
-});
-
-startChatBtn.addEventListener("click", () => {
-    usernameDisplay.textContent = currentUser;
-    showPage("waiting");
-
-    // Connect WebSocket
-    socket = new WebSocket("wss://your-backend-url"); // 🔗 palitan ng actual backend URL
-
-    socket.onopen = () => {
-        isConnected = true;
-        socket.send(JSON.stringify({ type: "join", username: currentUser }));
-    };
-
-    socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-
-        if (data.type === "match") {
-            partnerName.textContent = data.partner;
-            showPage("chat");
-        } else if (data.type === "message") {
-            addMessage(data.sender, data.text);
-        } else if (data.type === "left") {
-            leftMessage.textContent = "Stranger has left the chat.";
-            showPage("disconnected");
+    
+    // Set up connection monitoring
+    monitorConnection();
+    
+    // Event Listeners
+    swipeBtn.addEventListener('click', handleSwipe);
+    startChatBtn.addEventListener('click', startChat);
+    sendBtn.addEventListener('click', sendMessage);
+    leaveBtn.addEventListener('click', leaveChat);
+    rematchBtn.addEventListener('click', rematch);
+    homeBtn.addEventListener('click', goHome);
+    donationBtn.addEventListener('click', showDonationModal);
+    exportChatBtn.addEventListener('click', exportChatHistory);
+    closeReply.addEventListener('click', cancelReply);
+    messageInput.addEventListener('input', autoResize);
+    messageInput.addEventListener('keydown', handleKeyDown);
+    
+    // Modal event listeners
+    closeModal.addEventListener('click', closeDonationModal);
+    window.addEventListener('click', function(event) {
+        if (event.target === qrModal) {
+            closeDonationModal();
         }
-    };
-
-    socket.onclose = () => {
-        if (isConnected) {
-            leftMessage.textContent = "Connection lost.";
-            showPage("disconnected");
-        }
-        isConnected = false;
-    };
-});
-
-sendBtn.addEventListener("click", () => {
-    const message = messageInput.value.trim();
-    if (message.length === 0) return;
-
-    addMessage(currentUser, message);
-    socket.send(JSON.stringify({ type: "message", sender: currentUser, text: message }));
-    messageInput.value = "";
-});
-
-leaveBtn.addEventListener("click", () => {
-    if (socket) socket.close();
-    isConnected = false;
-    leftMessage.textContent = "You have left the chat.";
-    showPage("disconnected");
-});
-
-rematchBtn.addEventListener("click", () => {
-    usernameDisplay.textContent = currentUser;
-    showPage("waiting");
-
-    socket = new WebSocket("wss://your-backend-url");
-    socket.onopen = () => {
-        isConnected = true;
-        socket.send(JSON.stringify({ type: "join", username: currentUser }));
-    };
-});
-
-homeBtn.addEventListener("click", () => {
-    if (socket) socket.close();
-    showPage("entrance");
-    currentUser = "";
-    usernameInput.value = "";
-});
-
-// ====== CHAT UI ======
-function addMessage(sender, text) {
-    const msg = document.createElement("div");
-    msg.className = "chat-message";
-    msg.innerHTML = `<strong>${sender}:</strong> ${text}`;
-    chatMessages.appendChild(msg);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+    
+    // Initialize WebSocket connection
+    connectWebSocket();
+    
+    // Initialize with online status
+    updateConnectionStatus(true);
 }
 
-// ====== CONNECTION HANDLER ======
+// Show donation modal
+function showDonationModal() {
+    qrModal.style.display = 'block';
+}
+
+// Close donation modal
+function closeDonationModal() {
+    qrModal.style.display = 'none';
+}
+
+// Connect to WebSocket server
+function connectWebSocket() {
+    // Use your Render backend URL directly
+    const wsUrl = 'wss://popchat-eqgk.onrender.com';
+    
+    ws = new WebSocket(wsUrl);
+    
+    ws.onopen = function() {
+        console.log('Connected to POPCHAT server');
+        updateConnectionStatus(true);
+        
+        // Update active users count
+        updateActiveUsers();
+    };
+    
+    ws.onclose = function() {
+        console.log('Disconnected from server');
+        updateConnectionStatus(false);
+        
+        // Try to reconnect after 3 seconds
+        setTimeout(connectWebSocket, 3000);
+    };
+    
+    ws.onerror = function(error) {
+        console.error('WebSocket error:', error);
+        updateConnectionStatus(false);
+    };
+    
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+}
+    ws.onclose = function() {
+        console.log('Disconnected from server');
+        updateConnectionStatus(false);
+        
+        // Try to reconnect after 3 seconds
+        setTimeout(connectWebSocket, 3000);
+    };
+    
+    ws.onerror = function(error) {
+        console.error('WebSocket error:', error);
+        updateConnectionStatus(false);
+    };
+    
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+
+// Handle WebSocket messages
+function handleWebSocketMessage(data) {
+    switch (data.type) {
+        case 'active_users':
+            updateActiveUsersCount(data.count);
+            break;
+            
+        case 'match_found':
+            handleMatchFound(data.partner);
+            break;
+            
+        case 'message':
+            handleIncomingMessage(data);
+            break;
+            
+        case 'user_left':
+            handleUserLeft();
+            break;
+            
+        case 'error':
+            handleError(data.message);
+            break;
+    }
+}
+
+// Update active users count
+function updateActiveUsersCount(count) {
+    activeCountElement.textContent = `${count}+ Active Now`;
+}
+
+// Handle match found
+function handleMatchFound(partnerData) {
+    clearInterval(progressInterval);
+    progressBar.style.width = '100%';
+    
+    partner = partnerData.username;
+    isConnected = true;
+    
+    // Show chat page
+    showPage('chat');
+    partnerName.textContent = partner;
+    
+    // Add welcome message
+    addMessage('System', `You are now connected with ${partner}. Say hello!`, 'system');
+}
+
+// Handle incoming message
+function handleIncomingMessage(data) {
+    const messageData = {
+        sender: data.sender,
+        text: data.text,
+        type: 'received',
+        timestamp: new Date(data.timestamp),
+        id: data.id
+    };
+    
+    addMessage(messageData.sender, messageData.text, messageData.type, null, messageData.id);
+    chatHistory.push(messageData);
+}
+
+// Handle user left
+function handleUserLeft() {
+    isConnected = false;
+    leftMessage.textContent = "Your partner has left the conversation.";
+    showPage('disconnected');
+}
+
+// Handle error
+function handleError(message) {
+    console.error('Server error:', message);
+    alert(`Error: ${message}`);
+}
+
+// Send WebSocket message
+function sendWebSocketMessage(type, data = {}) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type,
+            ...data
+        }));
+    }
+}
+
+// Monitor internet connection
+function monitorConnection() {
+    window.addEventListener('online', function() {
+        updateConnectionStatus(true);
+    });
+    
+    window.addEventListener('offline', function() {
+        updateConnectionStatus(false);
+    });
+}
+
+// Update connection status UI
 function updateConnectionStatus(online) {
     if (online) {
-        connectionStatus.textContent = '🟢 You are Online';
-        connectionStatus.classList.remove("offline");
-        connectionStatus.classList.add("online");
-
-        // Enable inputs and buttons
-        document.querySelectorAll("button, input, textarea").forEach(el => {
-            el.disabled = false;
-            el.style.opacity = "1";
-            el.style.cursor = "pointer";
-        });
-
-        // Hide after 3s
+        connectionStatus.textContent = 'Connection restored';
+        connectionStatus.className = 'connection-status online';
         setTimeout(() => {
             connectionStatus.style.display = 'none';
         }, 3000);
-
     } else {
-        connectionStatus.textContent = '🔴 No Internet Connection';
-        connectionStatus.classList.remove("online");
-        connectionStatus.classList.add("offline");
-        connectionStatus.style.display = 'block';
-
-        // Disable inputs and buttons
-        document.querySelectorAll("button, input, textarea").forEach(el => {
-            el.disabled = true;
-            el.style.opacity = "0.5";
-            el.style.cursor = "not-allowed";
-        });
-
-        // If nasa chat tapos nawalan ng net
-        if (pages.chat.classList.contains("active")) {
-            if (socket) socket.close();
-            isConnected = false;
-            leftMessage.textContent = "You are offline. Conversation ended.";
-            showPage("disconnected");
-        }
+        connectionStatus.textContent = 'No internet connection';
+        connectionStatus.className = 'connection-status offline';
     }
 }
 
-// ====== LISTENERS ======
-window.addEventListener("online", () => updateConnectionStatus(true));
-window.addEventListener("offline", () => updateConnectionStatus(false));
-updateConnectionStatus(navigator.onLine);
+// Update active users count
+function updateActiveUsers() {
+    sendWebSocketMessage('get_active_users');
+}
 
-// ====== STYLE INJECTION ======
-const style = document.createElement("style");
-style.textContent = `
-.connection-status {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    padding: 12px;
-    text-align: center;
-    font-weight: bold;
-    font-size: 14px;
-    z-index: 2000;
-    display: none;
-    transition: all 0.3s ease-in-out;
+// Handle keydown events in the message input
+function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+        if (!e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+        // If shift is pressed, allow default behavior (new line)
+    }
 }
-.connection-status.online {
-    background-color: #4CAF50;
-    color: #000;
-    display: block;
+
+// Auto-resize textarea based on content
+function autoResize() {
+    messageInput.style.height = 'auto';
+    messageInput.style.height = (messageInput.scrollHeight) + 'px';
 }
-.connection-status.offline {
-    background-color: #ff4444;
-    color: #fff;
-    display: block;
+
+// Handle swipe to match
+function handleSwipe() {
+    const username = usernameInput.value.trim();
+    if (!username) {
+        alert('Please enter a username');
+        return;
+    }
+    
+    if (username.length < 3 || username.length > 20) {
+        alert('Username must be between 3 and 20 characters');
+        return;
+    }
+    
+    currentUser = username;
+    localStorage.setItem('chatUsername', username);
+    dashboardUsername.textContent = username;
+    
+    // Send username to server
+    sendWebSocketMessage('set_username', { username });
+    
+    // Show dashboard page
+    showPage('dashboard');
 }
-`;
-document.head.appendChild(style);
+
+// Start chat - go to waiting page
+function startChat() {
+    usernameDisplay.textContent = currentUser;
+    showPage('waiting');
+    
+    // Start progress bar animation
+    let progress = 0;
+    progressInterval = setInterval(() => {
+        progress += 0.5;
+        progressBar.style.width = `${progress}%`;
+        
+        if (progress >= 100) {
+            clearInterval(progressInterval);
+        }
+    }, 100);
+    
+    // Request to find a partner
+    sendWebSocketMessage('find_partner');
+}
+
+// Send a message
+function sendMessage() {
+    const message = messageInput.value.trim();
+    if (!message || !isConnected) return;
+    
+    if (message.length > 500) {
+        alert('Message is too long (max 500 characters)');
+        return;
+    }
+    
+    // Add message to chat
+    const messageData = {
+        sender: currentUser,
+        text: message,
+        type: 'sent',
+        timestamp: new Date(),
+        replyTo: replyingTo,
+        id: messageCounter++
+    };
+    
+    addMessage(messageData.sender, messageData.text, messageData.type, messageData.replyTo, messageData.id);
+    chatHistory.push(messageData);
+    
+    // Send message to server
+    sendWebSocketMessage('send_message', {
+        text: message,
+        replyTo: replyingTo ? replyingTo.id : null
+    });
+    
+    // Reset textarea height and clear input
+    messageInput.style.height = 'auto';
+    messageInput.value = '';
+    
+    // Cancel reply if active
+    if (replyingTo) {
+        cancelReply();
+    }
+}
+
+// Leave the chat
+function leaveChat() {
+    isConnected = false;
+    sendWebSocketMessage('leave_chat');
+    leftMessage.textContent = "You've left the conversation.";
+    showPage('disconnected');
+}
+
+// Rematch with a new partner
+function rematch() {
+    showPage('waiting');
+    
+    // Clear chat messages and history
+    chatMessages.innerHTML = '';
+    chatHistory = [];
+    messageElements = {};
+    messageCounter = 0;
+    
+    // Start progress bar animation
+    let progress = 0;
+    progressInterval = setInterval(() => {
+        progress += 0.5;
+        progressBar.style.width = `${progress}%`;
+        
+        if (progress >= 100) {
+            clearInterval(progressInterval);
+        }
+    }, 100);
+    
+    // Request to find a new partner
+    sendWebSocketMessage('find_partner');
+}
+
+// Go back to home page
+function goHome() {
+    isConnected = false;
+    if (waitingTimer) clearTimeout(waitingTimer);
+    if (progressInterval) clearInterval(progressInterval);
+    showPage('entrance');
+}
+
+// Export chat history
+function exportChatHistory() {
+    let exportData = `POPCHAT Conversation History\n`;
+    exportData += `Date: ${new Date().toLocaleString()}\n`;
+    exportData += `Participants: ${currentUser} and ${partner}\n`;
+    exportData += `Messages:\n\n`;
+    
+    chatHistory.forEach(msg => {
+        const time = msg.timestamp.toLocaleTimeString();
+        exportData += `[${time}] ${msg.sender}: ${msg.text}\n`;
+    });
+    
+    const blob = new Blob([exportData], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `popchat_${new Date().getTime()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Cancel reply
+function cancelReply() {
+    replyingTo = null;
+    replyIndicator.style.display = 'none';
+}
+
+// Highlight a message that was replied to
+function highlightRepliedMessage(messageId) {
+    const messageElement = messageElements[messageId];
+    if (messageElement) {
+        messageElement.classList.add('highlight');
+        
+        // Scroll to the message
+        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Remove highlight after 3 seconds
+        setTimeout(() => {
+            messageElement.classList.remove('highlight');
+        }, 3000);
+    }
+}
+
+// Add a message to the chat
+function addMessage(sender, text, type, replyTo = null, messageId = null) {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', type);
+    
+    if (messageId !== null) {
+        messageElement.dataset.messageId = messageId;
+        messageElements[messageId] = messageElement;
+    }
+    
+    if (type === 'system') {
+        messageElement.textContent = text;
+    } else {
+        let messageHTML = '';
+        
+        if (type === 'received') {
+            messageHTML += `<div class="message-username">${sender}</div>`;
+        }
+        
+        // Add reply reference if this is a reply
+        if (replyTo) {
+            messageHTML += `<div class="reply-reference">Replying to: ${replyTo.sender}</div>`;
+            
+            // Add click event to highlight the original message
+            messageElement.addEventListener('click', function() {
+                highlightRepliedMessage(replyTo.id);
+            });
+        }
+        
+        // Preserve line breaks in messages
+        const formattedText = text.replace(/\n/g, '<br>');
+        messageHTML += formattedText;
+        
+        // Add timestamp
+        const now = new Date();
+        const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        messageHTML += `<div class="message-time">${timeString}</div>`;
+        
+        messageElement.innerHTML = messageHTML;
+        
+        // Add long press event for reply (only for received messages)
+        if (type === 'received') {
+            let pressTimer;
+            messageElement.addEventListener('mousedown', function() {
+                pressTimer = window.setTimeout(function() {
+                    replyingTo = { 
+                        sender: sender, 
+                        text: text,
+                        id: messageId
+                    };
+                    replyUsername.textContent = `${sender}`;
+                    replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
+                    replyIndicator.style.display = 'flex';
+                }, 500);
+            });
+            
+            messageElement.addEventListener('mouseup', function() {
+                clearTimeout(pressTimer);
+            });
+            
+            messageElement.addEventListener('touchstart', function() {
+                pressTimer = window.setTimeout(function() {
+                    replyingTo = { 
+                        sender: sender, 
+                        text: text,
+                        id: messageId
+                    };
+                    replyUsername.textContent = `${sender}`;
+                    replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
+                    replyIndicator.style.display = 'flex';
+                }, 500);
+            });
+            
+            messageElement.addEventListener('touchend', function() {
+                clearTimeout(pressTimer);
+            });
+        }
+    }
+    
+    chatMessages.appendChild(messageElement);
+    
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Show specific page
+function showPage(pageName) {
+    // Hide all pages
+    for (const page in pages) {
+        pages[page].classList.remove('active');
+    }
+    
+    // Show requested page
+    pages[pageName].classList.add('active');
+    
+    // Focus on input if we're on the chat page
+    if (pageName === 'chat') {
+        setTimeout(() => {
+            messageInput.focus();
+        }, 100);
+    }
+    
+    // Reset progress bar if leaving waiting page
+    if (pageName !== 'waiting') {
+        clearInterval(progressInterval);
+        progressBar.style.width = '0%';
+    }
+}
+
+// Initialize the app when DOM is loaded
+document.addEventListener('DOMContentLoaded', init);
