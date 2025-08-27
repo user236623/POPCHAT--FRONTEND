@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POPCHAT</title>
+    <title>POPCHAT - Random Chat with Strangers</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -17,7 +17,11 @@
             <h2>Support POPCHAT</h2>
             <p>Scan the QR code to make a donation</p>
             <div class="qr-code-container">
-                <img src="qr-code.jpg" alt="Donation QR Code" class="qr-code">
+                <img src="qr-code.jpg" alt="Donation QR Code" class="qr-code" onerror="this.style.display='none'">
+                <div class="qr-placeholder" id="qr-placeholder">
+                    <i class="fas fa-qrcode"></i>
+                    <p>QR Code Image</p>
+                </div>
             </div>
             <p class="donation-note">Your support helps keep POPCHAT running and improving!</p>
         </div>
@@ -33,7 +37,7 @@
             <div class="username-container">
                 <input type="text" id="username-input" class="username-input" placeholder="Enter your username" maxlength="20">
                 <button class="btn swipe-btn" id="swipe-btn">
-                    Enter
+                     Enter Chat 
                 </button>
             </div>
             <div class="active-count" id="entrance-active-count">0 Active Now</div>
@@ -43,7 +47,9 @@
         <div class="page" id="dashboard-page">
             <h1>Welcome, <span id="dashboard-username"></span>!</h1>
             <p>Ready to start chatting with random people?</p>
-            <button class="btn" id="start-chat-btn">Start Chat</button>
+            <button class="btn" id="start-chat-btn">
+                <i class="fas fa-search"></i> Find Chat Partner
+            </button>
         </div>
         
         <!-- Waiting Page -->
@@ -92,7 +98,9 @@
                 </div>
                 
                 <div class="chat-messages" id="chat-messages">
-                    <!-- Messages will be added here dynamically -->
+                    <div class="system-message">
+                        <i class="fas fa-info-circle"></i> Welcome to POPCHAT! You'll be connected shortly.
+                    </div>
                 </div>
                 
                 <div class="chat-input-area">
@@ -123,8 +131,12 @@
                 <h1>Conversation Ended</h1>
                 <p id="left-message">Your partner has left the chat.</p>
                 <div class="disconnected-buttons">
-                    <button class="btn" id="rematch-btn">Find New Partner</button>
-                    <button class="btn" id="home-btn">Back to Home</button>
+                    <button class="btn" id="rematch-btn">
+                        <i class="fas fa-redo"></i> Find New Partner
+                    </button>
+                    <button class="btn" id="home-btn">
+                        <i class="fas fa-home"></i> Back to Home
+                    </button>
                 </div>
                 <button class="btn donation-btn" id="donation-btn">
                     <i class="fas fa-heart"></i> Support with Donation
