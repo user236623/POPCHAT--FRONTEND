@@ -309,16 +309,17 @@ h1 {
     font-style: italic;
 }
 
-/* IMPROVED CHAT INPUT AREA - FIXED POSITION */
+/* FIXED: IMPROVED CHAT INPUT AREA - BETTER SPACING AND CENTERING */
 .chat-input-area {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     padding: 15px 20px;
-    gap: 10px;
+    gap: 12px;
     background: rgba(10, 10, 20, 0.95);
     border-top: 1px solid #333;
     flex-shrink: 0;
-    min-height: 80px;
+    min-height: 85px;
+    box-sizing: border-box;
 }
 
 .input-container {
@@ -326,12 +327,13 @@ h1 {
     flex-grow: 1;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 25px;
-    padding: 8px 16px;
+    padding: 10px 16px;
     align-items: center;
     min-height: 50px;
     max-height: 120px;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 0 5px;
 }
 
 .chat-input {
@@ -673,13 +675,16 @@ h1 {
         border-radius: 15px;
     }
     
+    /* FIXED: Improved mobile input area spacing */
     .chat-input-area {
         padding: 12px 15px;
-        min-height: 70px;
+        min-height: 75px;
+        gap: 10px;
     }
     
     .input-container {
-        padding: 6px 14px;
+        padding: 8px 14px;
+        margin: 0 3px;
     }
     
     .icon-btn {
