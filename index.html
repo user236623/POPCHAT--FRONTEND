@@ -18,16 +18,10 @@
             <h2>Support POPCHAT</h2>
             <p>Scan the QR code to make a donation</p>
             <div class="qr-code-container">
-                <!-- Real QR Code (replace with your actual QR code) -->
-                <div style="background: white; padding: 10px; display: inline-block;">
-                    <div style="text-align: center; font-weight: bold; margin-bottom: 5px;">POPCHAT D.</div>
-                    <div style="text-align: center; letter-spacing: 2px; margin-bottom: 10px;">........2934</div>
-                    <div style="width: 150px; height: 150px; background: #f0f0f0; display: flex; justify-content: center; align-items: center; margin: 0 auto;">
-                        <div style="text-align: center;">
-                            <i class="fas fa-qrcode" style="font-size: 60px; color: #333;"></i>
-                            <p style="margin-top: 5px; font-size: 12px;">QR Code</p>
-                        </div>
-                    </div>
+                <img src="qr-code.jpg" alt="Donation QR Code" class="qr-code" onerror="this.style.display='none'">
+                <div class="qr-placeholder" id="qr-placeholder">
+                    <i class="fas fa-qrcode"></i>
+                    <p>QR Code Image</p>
                 </div>
             </div>
             <p class="donation-note">Your support helps keep POPCHAT running and improving!</p>
