@@ -33,6 +33,8 @@ const qrModal = document.getElementById('qr-modal');
 const closeModal = document.querySelector('.close');
 const typingIndicator = document.getElementById('typing-indicator');
 const typingText = document.getElementById('typing-text');
+const menuBtn = document.querySelector('.menu-btn');
+const menuContent = document.querySelector('.menu-content');
 
 // App State
 let currentUser = '';
@@ -81,6 +83,24 @@ function init() {
             closeDonationModal();
         }
     });
+    
+    // Menu functionality
+    if (menuBtn && menuContent) {
+        menuBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            menuContent.style.display = menuContent.style.display === 'block' ? 'none' : 'block';
+        });
+        
+        // Close menu when clicking elsewhere
+        document.addEventListener('click', function() {
+            menuContent.style.display = 'none';
+        });
+        
+        // Prevent menu from closing when clicking inside it
+        menuContent.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    }
     
     // Initialize WebSocket connection
     connectWebSocket();
@@ -168,6 +188,8 @@ function connectWebSocket() {
 
 // Handle WebSocket messages
 function handleWebSocketMessage(data) {
+    console.log('Received message:', data); // For debugging
+    
     switch (data.type) {
         case 'welcome':
             console.log('Server:', data.message);
@@ -207,7 +229,12 @@ function handleWebSocketMessage(data) {
             break;
             
         default:
-            console.log('Unknown message type:', data.type);
+            console.log('Unknown message type:', data.type, data);
+            // Instead of showing error, handle gracefully
+            if (data.text) {
+                // If it has text content, display it as a system message
+                addMessage('System', data.text, 'system');
+            }
     }
 }
 
@@ -264,7 +291,7 @@ function handleUserLeft() {
 function handleError(message) {
     console.error('Server error:', message);
     // Show error to user
-    addMessage('System', `Error: ${message}`, 'system');
+    addMessage('System', `Error: ${message}`, 'system', true);
 }
 
 // Handle typing start from partner
@@ -577,9 +604,12 @@ function highlightRepliedMessage(messageId) {
 }
 
 // Add a message to the chat
-function addMessage(sender, text, type, replyTo = null, messageId = null) {
+function addMessage(sender, text, type, replyTo = null, messageId = null, isError = false) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('message', type);
+    if (isError) {
+        messageElement.classList.add('error');
+    }
     
     if (messageId !== null) {
         messageElement.dataset.messageId = messageId;
@@ -588,6 +618,9 @@ function addMessage(sender, text, type, replyTo = null, messageId = null) {
     
     if (type === 'system') {
         messageElement.innerHTML = `<i class="fas fa-info-circle"></i> ${text}`;
+        if (isError) {
+            messageElement.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${text}`;
+        }
     } else {
         let messageHTML = '';
         
@@ -685,6 +718,11 @@ function showPage(pageName) {
     // Hide typing indicator when changing pages
     if (pageName !== 'chat') {
         handleTypingStop();
+    }
+    
+    // Hide menu when changing pages
+    if (menuContent) {
+        menuContent.style.display = 'none';
     }
 }
 
