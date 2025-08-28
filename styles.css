@@ -309,17 +309,23 @@ h1 {
     font-style: italic;
 }
 
-/* FIXED: IMPROVED CHAT INPUT AREA - BETTER SPACING AND CENTERING */
+/* IMPROVED CHAT INPUT AREA - FIXED POSITION */
+/* IMPROVED CHAT INPUT AREA - FIXED POSITION */
 .chat-input-area {
+    position: fixed;          /* laging nakapwesto sa ilalim */
+    bottom: 0;
+    left: 0;
+    right: 0;
     display: flex;
-    align-items: center;
-    padding: 15px 20px;
-    gap: 12px;
+    align-items: center;      /* center vertically */
+    padding: 12px 15px;
+    gap: 10px;
     background: rgba(10, 10, 20, 0.95);
     border-top: 1px solid #333;
-    flex-shrink: 0;
-    min-height: 85px;
-    box-sizing: border-box;
+    min-height: 70px;
+    z-index: 100;             /* siguraduhing nasa ibabaw */
+    max-width: 500px;
+    margin: 0 auto;           /* para naka-center sa screen */
 }
 
 .input-container {
@@ -327,13 +333,12 @@ h1 {
     flex-grow: 1;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 25px;
-    padding: 10px 16px;
+    padding: 8px 16px;
     align-items: center;
-    min-height: 50px;
+    min-height: 44px;
     max-height: 120px;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    margin: 0 5px;
 }
 
 .chat-input {
@@ -365,15 +370,14 @@ h1 {
     color: #fff;
     font-size: 20px;
     cursor: pointer;
-    padding: 12px;
     border-radius: 50%;
     transition: all 0.3s ease;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: center;      /* center button icon */
+    justify-content: center;  /* center button icon */
     flex-shrink: 0;
-    min-width: 44px;
-    min-height: 44px;
+    width: 44px;
+    height: 44px;
 }
 
 .icon-btn:hover {
@@ -675,16 +679,13 @@ h1 {
         border-radius: 15px;
     }
     
-    /* FIXED: Improved mobile input area spacing */
     .chat-input-area {
         padding: 12px 15px;
-        min-height: 75px;
-        gap: 10px;
+        min-height: 70px;
     }
     
     .input-container {
-        padding: 8px 14px;
-        margin: 0 3px;
+        padding: 6px 14px;
     }
     
     .icon-btn {
