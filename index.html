@@ -1,15 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8623524185914819" crossorigin="anonymous"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>POPCHAT - Random Chat with Strangers</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
-    
-    <!-- POPUNDER ADS SCRIPT -->
-    <script type='text/javascript' src='//keeptraumatic.com/f1/67/96/f167965a328079916999e5fac5149431.js'></script>
 </head>
 <body>
     <div class="connection-status" id="connection-status"></div>
@@ -51,21 +47,6 @@
         <div class="page" id="dashboard-page">
             <h1>Welcome, <span id="dashboard-username"></span>!</h1>
             <p>Ready to start chatting with random people?</p>
-            
-            <!-- 300x250 BANNER ADS SCRIPT - DASHBOARD PAGE ONLY -->
-            <div id="dashboard-ad-container">
-                <script type="text/javascript">
-                    atOptions = {
-                        'key' : '74e32de67a780218ef74988a5b421b0e',
-                        'format' : 'iframe',
-                        'height' : 250,
-                        'width' : 300,
-                        'params' : {}
-                    };
-                </script>
-                <script type="text/javascript" src="//www.highperformanceformat.com/74e32de67a780218ef74988a5b421b0e/invoke.js"></script>
-            </div>
-            
             <button class="btn" id="start-chat-btn">
                 <i class="fas fa-search"></i> Find Chat Partner
             </button>
@@ -74,21 +55,6 @@
         <!-- Waiting Page -->
         <div class="page" id="waiting-page">
             <h1 id="waiting-text" class="waiting-text">Hi <span id="username-display"></span>, Finding someone for you...</h1>
-            
-            <!-- 300x250 BANNER ADS SCRIPT - WAITING PAGE ONLY -->
-            <div id="waiting-ad-container">
-                <script type="text/javascript">
-                    atOptions = {
-                        'key' : '74e32de67a780218ef74988a5b421b0e',
-                        'format' : 'iframe',
-                        'height' : 250,
-                        'width' : 300,
-                        'params' : {}
-                    };
-                </script>
-                <script type="text/javascript" src="//www.highperformanceformat.com/74e32de67a780218ef74988a5b421b0e/invoke.js"></script>
-            </div>
-            
             <div class="loader"></div>
             <div class="waiting-progress">
                 <div class="progress-bar" id="progress-bar"></div>
@@ -100,7 +66,7 @@
             </div>
         </div>
         
-        <!-- Chat Page - WALANG ADS DITO -->
+        <!-- Chat Page -->
         <div class="page" id="chat-page">
             <div class="chat-container">
                 <div class="chat-header">
@@ -112,8 +78,7 @@
                     <div class="menu-container">
                         <button class="menu-btn"><i class="fas fa-ellipsis-v"></i></button>
                         <div class="menu-content">
-                            <a id="export-chat-btn"><i class="fas fa-download"></i> Export Chat</a>
-                            <a id="report-btn"><i class="fas fa-flag"></i> Report User</a>
+                            <a id="voice-call-btn"><i class="fas fa-phone"></i> Voice Call</a>
                         </div>
                     </div>
                 </div>
@@ -163,6 +128,44 @@
                     
                     <button class="icon-btn send-btn" id="send-btn" title="Send message">
                         <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Call Page -->
+        <div class="page" id="call-page">
+            <div class="call-container">
+                <div class="call-header">
+                    <div class="user-info">
+                        <div class="user-avatar">👤</div>
+                        <span id="call-partner-name">Partner</span>
+                        <span class="online-dot"></span>
+                    </div>
+                </div>
+                
+                <div class="call-status-container">
+                    <div class="call-avatar-large">
+                        👤
+                    </div>
+                    <div class="call-status" id="call-status">Calling...</div>
+                    <div class="call-timer" id="call-timer">00:00</div>
+                </div>
+                
+                <div class="call-controls">
+                    <button class="call-btn back-chat-btn" id="back-chat-btn" title="Back to Chat">
+                        <i class="fas fa-comment"></i>
+                        <span>Back Chat</span>
+                    </button>
+                    
+                    <button class="call-btn hangup-btn" id="hangup-btn" title="Hang Up">
+                        <i class="fas fa-phone-slash"></i>
+                        <span>Hang Up</span>
+                    </button>
+                    
+                    <button class="call-btn mute-btn" id="mute-btn" title="Mute">
+                        <i class="fas fa-microphone"></i>
+                        <span>Mute</span>
                     </button>
                 </div>
             </div>
