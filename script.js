@@ -4,6 +4,7 @@ const pages = {
     dashboard: document.getElementById('dashboard-page'),
     waiting: document.getElementById('waiting-page'),
     chat: document.getElementById('chat-page'),
+    call: document.getElementById('call-page'),
     disconnected: document.getElementById('disconnected-page')
 };
 
@@ -21,7 +22,7 @@ const leftMessage = document.getElementById('left-message');
 const rematchBtn = document.getElementById('rematch-btn');
 const homeBtn = document.getElementById('home-btn');
 const donationBtn = document.getElementById('donation-btn');
-const exportChatBtn = document.getElementById('export-chat-btn');
+const voiceCallBtn = document.getElementById('voice-call-btn');
 const replyIndicator = document.getElementById('reply-indicator');
 const replyUsername = document.getElementById('reply-username');
 const replyText = document.getElementById('reply-text');
@@ -35,6 +36,15 @@ const typingIndicator = document.getElementById('typing-indicator');
 const typingText = document.getElementById('typing-text');
 const menuBtn = document.querySelector('.menu-btn');
 const menuContent = document.querySelector('.menu-content');
+
+// Call Page Elements
+const callPage = document.getElementById('call-page');
+const callPartnerName = document.getElementById('call-partner-name');
+const callStatus = document.getElementById('call-status');
+const callTimer = document.getElementById('call-timer');
+const backChatBtn = document.getElementById('back-chat-btn');
+const hangupBtn = document.getElementById('hangup-btn');
+const muteBtn = document.getElementById('mute-btn');
 
 // App State
 let currentUser = '';
@@ -51,6 +61,12 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 let typingTimer = null;
 let partnerTyping = false;
+
+// Call State
+let callActive = false;
+let callTimerInterval = null;
+let callStartTime = 0;
+let isMuted = false;
 
 // Initialize the app
 function init() {
@@ -71,10 +87,15 @@ function init() {
     rematchBtn.addEventListener('click', rematch);
     homeBtn.addEventListener('click', goHome);
     donationBtn.addEventListener('click', showDonationModal);
-    exportChatBtn.addEventListener('click', exportChatHistory);
+    voiceCallBtn.addEventListener('click', initiateVoiceCall);
     closeReply.addEventListener('click', cancelReply);
     messageInput.addEventListener('input', handleMessageInput);
     messageInput.addEventListener('keydown', handleKeyDown);
+    
+    // Call Page Event Listeners
+    backChatBtn.addEventListener('click', backToChat);
+    hangupBtn.addEventListener('click', hangUpCall);
+    muteBtn.addEventListener('click', toggleMute);
     
     // Modal event listeners
     closeModal.addEventListener('click', closeDonationModal);
@@ -188,7 +209,7 @@ function connectWebSocket() {
 
 // Handle WebSocket messages
 function handleWebSocketMessage(data) {
-    console.log('Received message:', data); // For debugging
+    console.log('Received message:', data);
     
     switch (data.type) {
         case 'welcome':
@@ -228,11 +249,29 @@ function handleWebSocketMessage(data) {
             handleTypingStop();
             break;
             
+        case 'call_request':
+            handleIncomingCall(data);
+            break;
+            
+        case 'call_accepted':
+            handleCallAccepted();
+            break;
+            
+        case 'call_rejected':
+            handleCallRejected(data.reason);
+            break;
+            
+        case 'call_end':
+            handleCallEnded(data.reason);
+            break;
+            
+        case 'call_mute':
+            handleCallMuteUpdate(data.muted);
+            break;
+            
         default:
             console.log('Unknown message type:', data.type, data);
-            // Instead of showing error, handle gracefully
             if (data.text) {
-                // If it has text content, display it as a system message
                 addMessage('System', data.text, 'system');
             }
     }
@@ -290,7 +329,6 @@ function handleUserLeft() {
 // Handle error
 function handleError(message) {
     console.error('Server error:', message);
-    // Show error to user
     addMessage('System', `Error: ${message}`, 'system', true);
 }
 
@@ -391,7 +429,6 @@ function handleKeyDown(e) {
             e.preventDefault();
             sendMessage();
         }
-        // If shift is pressed, allow default behavior (new line)
     }
 }
 
@@ -551,34 +588,6 @@ function goHome() {
     showPage('entrance');
 }
 
-// Export chat history
-function exportChatHistory() {
-    if (chatHistory.length === 0) {
-        showError('No chat history to export');
-        return;
-    }
-    
-    let exportData = `POPCHAT Conversation History\n`;
-    exportData += `Date: ${new Date().toLocaleString()}\n`;
-    exportData += `Participants: ${currentUser} and ${partner}\n`;
-    exportData += `Messages:\n\n`;
-    
-    chatHistory.forEach(msg => {
-        const time = msg.timestamp.toLocaleTimeString();
-        exportData += `[${time}] ${msg.sender}: ${msg.text}\n`;
-    });
-    
-    const blob = new Blob([exportData], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `popchat_${new Date().getTime()}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
 // Cancel reply
 function cancelReply() {
     replyingTo = null;
@@ -724,6 +733,149 @@ function showPage(pageName) {
     if (menuContent) {
         menuContent.style.display = 'none';
     }
+    
+    // End call if leaving call page by other means
+    if (pageName !== 'call' && callActive) {
+        endCall();
+    }
+}
+
+// Voice Call Functions
+function initiateVoiceCall() {
+    if (!isConnected) {
+        showError('You need to be connected to a partner to start a call');
+        return;
+    }
+    
+    // Hide menu
+    menuContent.style.display = 'none';
+    
+    // Set up call page
+    callPartnerName.textContent = partner;
+    callStatus.textContent = 'Calling...';
+    callTimer.textContent = '00:00';
+    
+    // Show call page
+    showPage('call');
+    callActive = true;
+    
+    // Send call request to partner via WebSocket
+    sendWebSocketMessage('call_request', {
+        type: 'voice_call'
+    });
+    
+    // Simulate call progress
+    setTimeout(() => {
+        if (callActive) {
+            callStatus.textContent = 'Ringing...';
+        }
+    }, 2000);
+}
+
+function backToChat() {
+    if (callActive) {
+        showPage('chat');
+        // Keep call active in background
+    }
+}
+
+function hangUpCall() {
+    // Send hangup signal to partner
+    sendWebSocketMessage('call_end', {
+        reason: 'user_hangup'
+    });
+    
+    endCall();
+    showPage('entrance');
+}
+
+function toggleMute() {
+    isMuted = !isMuted;
+    
+    if (isMuted) {
+        muteBtn.innerHTML = '<i class="fas fa-microphone-slash"></i><span>Unmute</span>';
+        muteBtn.classList.add('active');
+        // Send mute signal to server
+        sendWebSocketMessage('call_mute', { muted: true });
+    } else {
+        muteBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Mute</span>';
+        muteBtn.classList.remove('active');
+        // Send unmute signal to server
+        sendWebSocketMessage('call_mute', { muted: false });
+    }
+}
+
+function endCall() {
+    callActive = false;
+    isMuted = false;
+    
+    // Reset mute button
+    muteBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Mute</span>';
+    muteBtn.classList.remove('active');
+    
+    // Clear timer
+    if (callTimerInterval) {
+        clearInterval(callTimerInterval);
+        callTimerInterval = null;
+    }
+    
+    // Reset call status
+    callStatus.textContent = 'Call Ended';
+}
+
+function startCallTimer() {
+    callStartTime = Date.now();
+    callTimerInterval = setInterval(updateCallTimer, 1000);
+}
+
+function updateCallTimer() {
+    if (!callActive) return;
+    
+    const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    
+    callTimer.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Call Event Handlers
+function handleIncomingCall(data) {
+    if (confirm(`${partner} is calling you. Accept call?`)) {
+        sendWebSocketMessage('call_accepted');
+        initiateVoiceCall();
+        callStatus.textContent = 'Connected';
+        startCallTimer();
+    } else {
+        sendWebSocketMessage('call_rejected', { reason: 'declined' });
+    }
+}
+
+function handleCallAccepted() {
+    callStatus.textContent = 'Connected';
+    startCallTimer();
+}
+
+function handleCallRejected(reason) {
+    callStatus.textContent = 'Call Rejected';
+    setTimeout(() => {
+        if (callActive) {
+            endCall();
+            showPage('chat');
+        }
+    }, 2000);
+}
+
+function handleCallEnded(reason) {
+    callStatus.textContent = 'Call Ended';
+    endCall();
+    setTimeout(() => {
+        showPage('chat');
+    }, 1500);
+}
+
+function handleCallMuteUpdate(muted) {
+    // Update UI to show partner's mute status
+    // This would show a mute indicator near partner's name in a real app
 }
 
 // Initialize the app when DOM is loaded
@@ -733,5 +885,8 @@ document.addEventListener('DOMContentLoaded', init);
 window.addEventListener('beforeunload', () => {
     if (isConnected) {
         sendWebSocketMessage('leave_chat');
+    }
+    if (callActive) {
+        sendWebSocketMessage('call_end', { reason: 'user_left' });
     }
 });
