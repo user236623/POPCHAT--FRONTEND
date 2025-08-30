@@ -4,7 +4,6 @@ const pages = {
     dashboard: document.getElementById('dashboard-page'),
     waiting: document.getElementById('waiting-page'),
     chat: document.getElementById('chat-page'),
-    call: document.getElementById('call-page'),
     disconnected: document.getElementById('disconnected-page')
 };
 
@@ -22,7 +21,7 @@ const leftMessage = document.getElementById('left-message');
 const rematchBtn = document.getElementById('rematch-btn');
 const homeBtn = document.getElementById('home-btn');
 const donationBtn = document.getElementById('donation-btn');
-const voiceCallBtn = document.getElementById('voice-call-btn');
+const exportChatBtn = document.getElementById('export-chat-btn');
 const replyIndicator = document.getElementById('reply-indicator');
 const replyUsername = document.getElementById('reply-username');
 const replyText = document.getElementById('reply-text');
@@ -36,21 +35,8 @@ const typingIndicator = document.getElementById('typing-indicator');
 const typingText = document.getElementById('typing-text');
 const menuBtn = document.querySelector('.menu-btn');
 const menuContent = document.querySelector('.menu-content');
-
-// Call Page Elements
-const callPage = document.getElementById('call-page');
-const callPartnerName = document.getElementById('call-partner-name');
-const callStatus = document.getElementById('call-status');
-const callTimer = document.getElementById('call-timer');
-const backChatBtn = document.getElementById('back-chat-btn');
-const hangupBtn = document.getElementById('hangup-btn');
-const muteBtn = document.getElementById('mute-btn');
-
-// Incoming Call Elements
-const incomingCallModal = document.getElementById('incoming-call-modal');
-const callerNameElement = document.getElementById('caller-name');
-const acceptCallBtn = document.getElementById('accept-call-btn');
-const rejectCallBtn = document.getElementById('reject-call-btn');
+const progressText = document.getElementById('progress-text');
+const waitingStatus = document.getElementById('waiting-status');
 
 // App State
 let currentUser = '';
@@ -67,16 +53,8 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 let typingTimer = null;
 let partnerTyping = false;
-
-// Call State
-let callActive = false;
-let callTimerInterval = null;
-let callStartTime = 0;
-let isMuted = false;
-let incomingCallData = null;
-let callNotificationTimer = null;
-let callSound = null;
-let isRinging = false;
+let queuePosition = 0;
+let queueTotal = 0;
 
 // Initialize the app
 function init() {
@@ -97,28 +75,16 @@ function init() {
     rematchBtn.addEventListener('click', rematch);
     homeBtn.addEventListener('click', goHome);
     donationBtn.addEventListener('click', showDonationModal);
-    voiceCallBtn.addEventListener('click', initiateVoiceCall);
+    exportChatBtn.addEventListener('click', exportChatHistory);
     closeReply.addEventListener('click', cancelReply);
     messageInput.addEventListener('input', handleMessageInput);
     messageInput.addEventListener('keydown', handleKeyDown);
-    
-    // Call Page Event Listeners
-    backChatBtn.addEventListener('click', backToChat);
-    hangupBtn.addEventListener('click', hangUpCall);
-    muteBtn.addEventListener('click', toggleMute);
-    
-    // Incoming Call Event Listeners
-    acceptCallBtn.addEventListener('click', acceptIncomingCall);
-    rejectCallBtn.addEventListener('click', rejectIncomingCall);
     
     // Modal event listeners
     closeModal.addEventListener('click', closeDonationModal);
     window.addEventListener('click', function(event) {
         if (event.target === qrModal) {
             closeDonationModal();
-        }
-        if (event.target === incomingCallModal) {
-            // Don't close on background click for incoming call
         }
     });
     
@@ -171,7 +137,7 @@ function connectWebSocket() {
         // For local development vs production
         const wsUrl = host === 'localhost' 
             ? `${protocol}//localhost:3000` 
-            : `${protocol}//${host}${port}`;
+            : `wss://popchat-eqgk.onrender.com`;
         
         console.log('Connecting to WebSocket at:', wsUrl);
         
@@ -226,7 +192,7 @@ function connectWebSocket() {
 
 // Handle WebSocket messages
 function handleWebSocketMessage(data) {
-    console.log('Received message:', data);
+    console.log('Received message:', data); // For debugging
     
     switch (data.type) {
         case 'welcome':
@@ -246,7 +212,7 @@ function handleWebSocketMessage(data) {
             break;
             
         case 'user_left':
-            handleUserLeft(data.message);
+            handleUserLeft();
             break;
             
         case 'error':
@@ -266,29 +232,19 @@ function handleWebSocketMessage(data) {
             handleTypingStop();
             break;
             
-        case 'call_request':
-            handleIncomingCall(data);
+        case 'queue_position':
+            handleQueuePosition(data.position, data.total);
             break;
             
-        case 'call_accepted':
-            handleCallAccepted();
-            break;
-            
-        case 'call_rejected':
-            handleCallRejected(data.reason);
-            break;
-            
-        case 'call_end':
-            handleCallEnded(data.reason);
-            break;
-            
-        case 'call_mute':
-            handleCallMuteUpdate(data.muted);
+        case 'queue_update':
+            handleQueueUpdate(data.position, data.total, data.estimatedTime);
             break;
             
         default:
             console.log('Unknown message type:', data.type, data);
+            // Instead of showing error, handle gracefully
             if (data.text) {
+                // If it has text content, display it as a system message
                 addMessage('System', data.text, 'system');
             }
     }
@@ -299,6 +255,53 @@ function updateActiveUsersCount(count) {
     if (activeCountElement) {
         activeCountElement.textContent = `${count}+ Active Now`;
     }
+}
+
+// Handle queue position
+function handleQueuePosition(position, total) {
+    queuePosition = position;
+    queueTotal = total;
+    
+    if (progressText) {
+        progressText.textContent = `Position in queue: ${position} of ${total}`;
+    }
+    
+    if (waitingStatus) {
+        const estimatedTime = estimateWaitTime(position);
+        const minutes = Math.floor(estimatedTime / 60);
+        const seconds = estimatedTime % 60;
+        
+        waitingStatus.innerHTML = `
+            <small>Estimated wait time: ${minutes}m ${seconds}s</small>
+            <small>${total} users online</small>
+        `;
+    }
+}
+
+// Handle queue update
+function handleQueueUpdate(position, total, estimatedTime) {
+    queuePosition = position;
+    queueTotal = total;
+    
+    if (progressText) {
+        progressText.textContent = `Position in queue: ${position} of ${total}`;
+    }
+    
+    if (waitingStatus) {
+        const minutes = Math.floor(estimatedTime / 60);
+        const seconds = estimatedTime % 60;
+        
+        waitingStatus.innerHTML = `
+            <small>Estimated wait time: ${minutes}m ${seconds}s</small>
+            <small>${total} users online</small>
+        `;
+    }
+}
+
+// Estimate wait time based on queue position
+function estimateWaitTime(position) {
+    // Base estimation: 10 seconds per person in queue
+    return position * 10;
 }
 
 // Handle match found
@@ -337,20 +340,16 @@ function handleIncomingMessage(data) {
 }
 
 // Handle user left
-function handleUserLeft(message) {
+function handleUserLeft() {
     isConnected = false;
-    leftMessage.textContent = message || "Your partner has left the conversation.";
+    leftMessage.textContent = "Your partner has left the conversation.";
     showPage('disconnected');
-    
-    // End call if active
-    if (callActive) {
-        endCall();
-    }
 }
 
 // Handle error
 function handleError(message) {
     console.error('Server error:', message);
+    // Show error to user
     addMessage('System', `Error: ${message}`, 'system', true);
 }
 
@@ -451,6 +450,7 @@ function handleKeyDown(e) {
             e.preventDefault();
             sendMessage();
         }
+        // If shift is pressed, allow default behavior (new line)
     }
 }
 
@@ -503,12 +503,18 @@ function startChat() {
     usernameDisplay.textContent = currentUser;
     showPage('waiting');
     
+    // Reset queue information
+    queuePosition = 0;
+    queueTotal = 0;
+    if (progressText) progressText.textContent = "Connecting to server...";
+    if (waitingStatus) waitingStatus.innerHTML = "";
+    
     // Start progress bar animation
     let progress = 0;
     progressInterval = setInterval(() => {
         progress += 0.5;
         if (progressBar) {
-            progressBar.style.width = `${progress}%`;
+            progressBar.style.width = `${Math.min(progress, 100)}%`;
         }
         
         if (progress >= 100) {
@@ -573,11 +579,6 @@ function leaveChat() {
     sendWebSocketMessage('leave_chat');
     leftMessage.textContent = "You've left the conversation.";
     showPage('disconnected');
-    
-    // End call if active
-    if (callActive) {
-        endCall();
-    }
 }
 
 // Rematch with a new partner
@@ -590,12 +591,18 @@ function rematch() {
     messageElements = {};
     messageCounter = 0;
     
+    // Reset queue information
+    queuePosition = 0;
+    queueTotal = 0;
+    if (progressText) progressText.textContent = "Connecting to server...";
+    if (waitingStatus) waitingStatus.innerHTML = "";
+    
     // Start progress bar animation
     let progress = 0;
     progressInterval = setInterval(() => {
         progress += 0.5;
         if (progressBar) {
-            progressBar.style.width = `${progress}%`;
+            progressBar.style.width = `${Math.min(progress, 100)}%`;
         }
         
         if (progress >= 100) {
@@ -605,530 +612,197 @@ function rematch() {
     
     // Request to find a new partner
     sendWebSocketMessage('find_partner');
-}
-
-// Go back to home page
-function goHome() {
-    isConnected = false;
-    if (waitingTimer) clearTimeout(waitingTimer);
-    if (progressInterval) clearInterval(progressInterval);
-    showPage('entrance');
+    }
     
-    // End call if active
-    if (callActive) {
-        endCall();
+    // Go back to home page
+    function goHome() {
+        isConnected = false;
+        if (waitingTimer) clearTimeout(waitingTimer);
+        if (progressInterval) clearInterval(progressInterval);
+        showPage('entrance');
     }
-}
-
-// Cancel reply
-function cancelReply() {
-    replyingTo = null;
-    if (replyIndicator) {
-        replyIndicator.style.display = 'none';
-    }
-}
-
-// Highlight a message that was replied to
-function highlightRepliedMessage(messageId) {
-    const messageElement = messageElements[messageId];
-    if (messageElement) {
-        messageElement.classList.add('highlight');
+    
+    // Export chat history
+    function exportChatHistory() {
+        if (chatHistory.length === 0) {
+            showError('No chat history to export');
+            return;
+        }
         
-        // Scroll to the message
-        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        let exportData = `POPCHAT Conversation History\n`;
+        exportData += `Date: ${new Date().toLocaleString()}\n`;
+        exportData += `Participants: ${currentUser} and ${partner}\n`;
+        exportData += `Messages:\n\n`;
         
-        // Remove highlight after 3 seconds
-        setTimeout(() => {
-            messageElement.classList.remove('highlight');
-        }, 3000);
-    }
-}
-
-// Add a message to the chat
-function addMessage(sender, text, type, replyTo = null, messageId = null, isError = false) {
-    const messageElement = document.createElement('div');
-    messageElement.classList.add('message', type);
-    if (isError) {
-        messageElement.classList.add('error');
-    }
-    
-    if (messageId !== null) {
-        messageElement.dataset.messageId = messageId;
-        messageElements[messageId] = messageElement;
+        chatHistory.forEach(msg => {
+            const time = msg.timestamp.toLocaleTimeString();
+            exportData += `[${time}] ${msg.sender}: ${msg.text}\n`;
+        });
+        
+        const blob = new Blob([exportData], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `popchat_${new Date().getTime()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
     
-    if (type === 'system') {
-        messageElement.innerHTML = `<i class="fas fa-info-circle"></i> ${text}`;
+    // Cancel reply
+    function cancelReply() {
+        replyingTo = null;
+        if (replyIndicator) {
+            replyIndicator.style.display = 'none';
+        }
+    }
+    
+    // Highlight a message that was replied to
+    function highlightRepliedMessage(messageId) {
+        const messageElement = messageElements[messageId];
+        if (messageElement) {
+            messageElement.classList.add('highlight');
+            
+            // Scroll to the message
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Remove highlight after 3 seconds
+            setTimeout(() => {
+                messageElement.classList.remove('highlight');
+            }, 3000);
+        }
+    }
+    
+    // Add a message to the chat
+    function addMessage(sender, text, type, replyTo = null, messageId = null, isError = false) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', type);
         if (isError) {
-            messageElement.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${text}`;
-        }
-    } else {
-        let messageHTML = '';
-        
-        if (type === 'received') {
-            messageHTML += `<div class="message-username">${sender}</div>`;
+            messageElement.classList.add('error');
         }
         
-        // Add reply reference if this is a reply
-        if (replyTo) {
-            messageHTML += `<div class="reply-reference">Replying to: ${replyTo.sender}</div>`;
-            
-            // Add click event to highlight the original message
-            messageElement.addEventListener('click', function() {
-                highlightRepliedMessage(replyTo.id);
-            });
+        if (messageId !== null) {
+            messageElement.dataset.messageId = messageId;
+            messageElements[messageId] = messageElement;
         }
         
-        // Preserve line breaks in messages
-        const formattedText = text.replace(/\n/g, '<br>');
-        messageHTML += formattedText;
-        
-        // Add timestamp
-        const now = new Date();
-        const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        messageHTML += `<div class="message-time">${timeString}</div>`;
-        
-        messageElement.innerHTML = messageHTML;
-        
-        // Add long press event for reply (only for received messages)
-        if (type === 'received') {
-            let pressTimer;
-            
-            const startPress = () => {
-                pressTimer = setTimeout(() => {
-                    replyingTo = { 
-                        sender: sender, 
-                        text: text,
-                        id: messageId
-                    };
-                    if (replyUsername) replyUsername.textContent = `${sender}`;
-                    if (replyText) replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
-                    if (replyIndicator) replyIndicator.style.display = 'flex';
-                }, 500);
-            };
-            
-            const endPress = () => {
-                clearTimeout(pressTimer);
-            };
-            
-            messageElement.addEventListener('mousedown', startPress);
-            messageElement.addEventListener('mouseup', endPress);
-            messageElement.addEventListener('mouseleave', endPress);
-            messageElement.addEventListener('touchstart', startPress);
-            messageElement.addEventListener('touchend', endPress);
-            messageElement.addEventListener('touchcancel', endPress);
-        }
-    }
-    
-    if (chatMessages) {
-        // Insert before typing indicator
-        chatMessages.insertBefore(messageElement, typingIndicator);
-        
-        // Scroll to bottom
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-}
-
-// Show specific page
-function showPage(pageName) {
-    // Hide all pages
-    for (const page in pages) {
-        if (pages[page]) {
-            pages[page].classList.remove('active');
-        }
-    }
-    
-    // Show requested page
-    if (pages[pageName]) {
-        pages[pageName].classList.add('active');
-    }
-    
-    // Focus on input if we're on the chat page
-    if (pageName === 'chat') {
-        setTimeout(() => {
-            if (messageInput) messageInput.focus();
-        }, 100);
-    }
-    
-    // Reset progress bar if leaving waiting page
-    if (pageName !== 'waiting' && progressBar) {
-        clearInterval(progressInterval);
-        progressBar.style.width = '0%';
-    }
-    
-    // Hide typing indicator when changing pages
-    if (pageName !== 'chat') {
-        handleTypingStop();
-    }
-    
-    // Hide menu when changing pages
-    if (menuContent) {
-        menuContent.style.display = 'none';
-    }
-    
-    // End call if leaving call page by other means
-    if (pageName !== 'call' && callActive) {
-        endCall();
-    }
-}
-
-// Voice Call Functions
-function initiateVoiceCall() {
-    if (!isConnected) {
-        showError('You need to be connected to a partner to start a call');
-        return;
-    }
-    
-    // Hide menu
-    menuContent.style.display = 'none';
-    
-    // Add call started message in chat
-    addMessage('System', `You started a voice call with ${partner}...`, 'system');
-    
-    // Set up call page
-    callPartnerName.textContent = partner;
-    callStatus.textContent = 'Calling...';
-    callTimer.textContent = '00:00';
-    
-    // Show call page
-    showPage('call');
-    callActive = true;
-    
-    // Send call request to partner via WebSocket
-    sendWebSocketMessage('call_request', {
-        type: 'voice_call'
-    });
-    
-    // Update menu notification
-    updateMenuCallNotification(true);
-    
-    // Simulate call progress
-    setTimeout(() => {
-        if (callActive) {
-            callStatus.textContent = 'Ringing...';
-            callStatus.classList.add('ringing');
-            addMessage('System', `Calling ${partner}...`, 'system');
-        }
-    }, 2000);
-}
-
-function backToChat() {
-    if (callActive) {
-        showPage('chat');
-        // Keep call active in background - just minimize the call interface
-        addMessage('System', 'Call is still active in background', 'system');
-    }
-}
-
-function hangUpCall() {
-    // Send hangup signal to partner
-    sendWebSocketMessage('call_end', {
-        reason: 'user_hangup'
-    });
-    
-    // Add call ended message
-    addMessage('System', 'You ended the voice call', 'system');
-    
-    endCall();
-    showPage('chat');
-}
-
-function toggleMute() {
-    isMuted = !isMuted;
-    
-    if (isMuted) {
-        muteBtn.innerHTML = '<i class="fas fa-microphone-slash"></i><span>Unmute</span>';
-        muteBtn.classList.add('active');
-        // Send mute signal to server
-        sendWebSocketMessage('call_mute', { muted: true });
-    } else {
-        muteBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Mute</span>';
-        muteBtn.classList.remove('active');
-        // Send unmute signal to server
-        sendWebSocketMessage('call_mute', { muted: false });
-    }
-}
-
-function endCall() {
-    callActive = false;
-    isMuted = false;
-    
-    // Reset mute button
-    muteBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Mute</span>';
-    muteBtn.classList.remove('active');
-    
-    // Clear timer
-    if (callTimerInterval) {
-        clearInterval(callTimerInterval);
-        callTimerInterval = null;
-    }
-    
-    // Reset call status
-    callStatus.textContent = 'Call Ended';
-    callStatus.classList.remove('ringing', 'connected');
-    callStatus.classList.add('ended');
-    callTimer.textContent = '00:00';
-    
-    // Update menu notification
-    updateMenuCallNotification(false);
-    
-    // Stop any call sounds
-    stopCallSound();
-    stopVibration();
-}
-
-function startCallTimer() {
-    callStartTime = Date.now();
-    callTimerInterval = setInterval(updateCallTimer, 1000);
-}
-
-function updateCallTimer() {
-    if (!callActive) return;
-    
-    const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
-    
-    callTimer.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
-
-// Incoming Call Functions
-function showIncomingCallNotification(callerName) {
-    // Stop any previous call sounds
-    stopCallSound();
-    
-    // Update modal content
-    callerNameElement.textContent = `${callerName} is calling you...`;
-    
-    // Show notification
-    incomingCallModal.style.display = 'block';
-    
-    // Start ringing sound and vibration
-    startCallSound();
-    vibratePhone();
-    
-    isRinging = true;
-    
-    // Update menu notification with pulsating phone icon
-    updateMenuCallNotification(true);
-    
-    // Auto-reject after 30 seconds if not answered (missed call)
-    callNotificationTimer = setTimeout(() => {
-        if (isRinging) {
-            addMessage('System', `Missed voice call from ${partner}`, 'system');
-            sendWebSocketMessage('call_rejected', { reason: 'timeout' });
-            stopCallNotification();
-            showPage('chat');
-        }
-    }, 30000);
-}
-
-function acceptIncomingCall() {
-    if (!incomingCallData) return;
-    
-    stopCallNotification();
-    sendWebSocketMessage('call_accepted');
-    
-    // Add call accepted message
-    addMessage('System', `You accepted the voice call`, 'system');
-    
-    // Set up call page
-    callPartnerName.textContent = partner;
-    callStatus.textContent = 'Connected';
-    callStatus.classList.remove('ringing');
-    callStatus.classList.add('connected');
-    
-    // Show call page
-    showPage('call');
-    callActive = true;
-    startCallTimer();
-}
-
-function rejectIncomingCall() {
-    stopCallNotification();
-    sendWebSocketMessage('call_rejected', { reason: 'declined' });
-    
-    // Add call rejected message
-    addMessage('System', `You declined the voice call`, 'system');
-    showPage('chat');
-}
-
-function stopCallNotification() {
-    isRinging = false;
-    incomingCallModal.style.display = 'none';
-    stopCallSound();
-    stopVibration();
-    
-    // Remove call notification from menu
-    updateMenuCallNotification(false);
-    
-    if (callNotificationTimer) {
-        clearTimeout(callNotificationTimer);
-        callNotificationTimer = null;
-    }
-}
-
-function startCallSound() {
-    // Create ringing sound (simple beep pattern)
-    try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.type = 'sine';
-        oscillator.frequency.value = 800;
-        gainNode.gain.value = 0.1;
-        
-        oscillator.start();
-        
-        // Beep pattern: beep-beep-beep pause
-        let beepCount = 0;
-        const beepInterval = setInterval(() => {
-            if (!isRinging) {
-                clearInterval(beepInterval);
-                oscillator.stop();
-                return;
+        if (type === 'system') {
+            messageElement.innerHTML = `<i class="fas fa-info-circle"></i> ${text}`;
+            if (isError) {
+                messageElement.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${text}`;
             }
-            
-            if (beepCount % 4 === 3) {
-                gainNode.gain.value = 0;
-            } else {
-                gainNode.gain.value = 0.1;
-            }
-            
-            beepCount++;
-        }, 500);
-        
-        callSound = {
-            context: audioContext,
-            oscillator: oscillator,
-            interval: beepInterval
-        };
-    } catch (error) {
-        console.log('Audio not supported:', error);
-    }
-}
-
-function stopCallSound() {
-    if (callSound) {
-        if (callSound.interval) clearInterval(callSound.interval);
-        if (callSound.oscillator) callSound.oscillator.stop();
-        if (callSound.context) callSound.context.close();
-        callSound = null;
-    }
-}
-
-function vibratePhone() {
-    // Vibrate pattern: vibrate for 500ms, pause for 500ms
-    if (navigator.vibrate) {
-        const vibrateInterval = setInterval(() => {
-            if (!isRinging) {
-                clearInterval(vibrateInterval);
-                navigator.vibrate(0);
-                return;
-            }
-            navigator.vibrate(500);
-        }, 1000);
-    }
-}
-
-function stopVibration() {
-    if (navigator.vibrate) {
-        navigator.vibrate(0);
-    }
-}
-
-// Call Event Handlers
-function handleIncomingCall(data) {
-    incomingCallData = data;
-    
-    // Add incoming call notification in chat
-    addMessage('System', `Incoming voice call from ${partner}...`, 'system');
-    
-    showIncomingCallNotification(partner);
-}
-
-function handleCallAccepted() {
-    if (callActive) {
-        callStatus.textContent = 'Connected';
-        callStatus.classList.remove('ringing');
-        callStatus.classList.add('connected');
-        startCallTimer();
-        
-        // Add call connected message
-        addMessage('System', `${partner} accepted the voice call`, 'system');
-    }
-}
-
-function handleCallRejected(reason) {
-    if (callActive) {
-        callStatus.textContent = 'Call Rejected';
-        
-        let rejectMessage = 'Call was rejected';
-        if (reason === 'declined') {
-            rejectMessage = `${partner} declined your call`;
-        } else if (reason === 'timeout') {
-            rejectMessage = `${partner} didn't answer`;
-        }
-        
-        addMessage('System', rejectMessage, 'system');
-        
-        endCall();
-        setTimeout(() => {
-            showPage('chat');
-        }, 2000);
-    }
-}
-
-function handleCallEnded(reason) {
-    if (callActive) {
-        let endMessage = 'Call ended';
-        if (reason === 'user_hangup') {
-            endMessage = `${partner} ended the call`;
-        } else if (reason === 'user_disconnected') {
-            endMessage = `${partner} disconnected from the call`;
-        }
-        
-        callStatus.textContent = 'Call Ended';
-        addMessage('System', endMessage, 'system');
-        
-        endCall();
-        setTimeout(() => {
-            showPage('chat');
-        }, 2000);
-    }
-}
-
-function handleCallMuteUpdate(muted) {
-    // Update UI to show partner's mute status
-    console.log(`Partner is ${muted ? 'muted' : 'unmuted'}`);
-}
-
-function updateMenuCallNotification(hasCall) {
-    const menuBtn = document.querySelector('.menu-btn');
-    if (menuBtn) {
-        if (hasCall) {
-            menuBtn.innerHTML = '<i class="fas fa-phone" style="color: #4CAF50; animation: pulse-glow 1s infinite;"></i>';
-            menuBtn.classList.add('call-notification-active');
         } else {
-            menuBtn.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
-            menuBtn.classList.remove('call-notification-active');
+            let messageHTML = '';
+            
+            if (type === 'received') {
+                messageHTML += `<div class="message-username">${sender}</div>`;
+            }
+            
+            // Add reply reference if this is a reply
+            if (replyTo) {
+                messageHTML += `<div class="reply-reference">Replying to: ${replyTo.sender}</div>`;
+                
+                // Add click event to highlight the original message
+                messageElement.addEventListener('click', function() {
+                    highlightRepliedMessage(replyTo.id);
+                });
+            }
+            
+            // Preserve line breaks in messages
+            const formattedText = text.replace(/\n/g, '<br>');
+            messageHTML += formattedText;
+            
+            // Add timestamp
+            const now = new Date();
+            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            messageHTML += `<div class="message-time">${timeString}</div>`;
+            
+            messageElement.innerHTML = messageHTML;
+            
+            // Add long press event for reply (only for received messages)
+            if (type === 'received') {
+                let pressTimer;
+                
+                const startPress = () => {
+                    pressTimer = setTimeout(() => {
+                        replyingTo = {
+                            sender: sender,
+                            text: text,
+                            id: messageId
+                        };
+                        if (replyUsername) replyUsername.textContent = `${sender}`;
+                        if (replyText) replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
+                        if (replyIndicator) replyIndicator.style.display = 'flex';
+                    }, 500);
+                };
+                
+                const endPress = () => {
+                    clearTimeout(pressTimer);
+                };
+                
+                messageElement.addEventListener('mousedown', startPress);
+                messageElement.addEventListener('mouseup', endPress);
+                messageElement.addEventListener('mouseleave', endPress);
+                messageElement.addEventListener('touchstart', startPress);
+                messageElement.addEventListener('touchend', endPress);
+                messageElement.addEventListener('touchcancel', endPress);
+            }
+        }
+        
+        if (chatMessages) {
+            // Insert before typing indicator
+            chatMessages.insertBefore(messageElement, typingIndicator);
+            
+            // Scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         }
     }
-}
-
-// Initialize the app when DOM is loaded
-document.addEventListener('DOMContentLoaded', init);
-
-// Handle page refresh/closing
-window.addEventListener('beforeunload', () => {
-    if (isConnected) {
-        sendWebSocketMessage('leave_chat');
+    
+    // Show specific page
+    function showPage(pageName) {
+        // Hide all pages
+        for (const page in pages) {
+            if (pages[page]) {
+                pages[page].classList.remove('active');
+            }
+        }
+        
+        // Show requested page
+        if (pages[pageName]) {
+            pages[pageName].classList.add('active');
+        }
+        
+        // Focus on input if we're on the chat page
+        if (pageName === 'chat') {
+            setTimeout(() => {
+                if (messageInput) messageInput.focus();
+            }, 100);
+        }
+        
+        // Reset progress bar if leaving waiting page
+        if (pageName !== 'waiting' && progressBar) {
+            clearInterval(progressInterval);
+            progressBar.style.width = '0%';
+        }
+        
+        // Hide typing indicator when changing pages
+        if (pageName !== 'chat') {
+            handleTypingStop();
+        }
+        
+        // Hide menu when changing pages
+        if (menuContent) {
+            menuContent.style.display = 'none';
+        }
     }
-    if (callActive) {
-        sendWebSocketMessage('call_end', { reason: 'user_left' });
-    }
-});
+    
+    // Initialize the app when DOM is loaded
+    document.addEventListener('DOMContentLoaded', init);
+    
+    // Handle page refresh/closing
+    window.addEventListener('beforeunload', () => {
+        if (isConnected) {
+            sendWebSocketMessage('leave_chat');
+        }
+    });
