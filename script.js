@@ -126,7 +126,7 @@ function closeDonationModal() {
     qrModal.style.display = 'none';
 }
 
-// Connect to WebSocket server
+// Connect to WebSocket server - IMPROVED WITH BETTER ERROR HANDLING
 function connectWebSocket() {
     try {
         // Use secure WebSocket for HTTPS, regular for HTTP
@@ -178,10 +178,26 @@ function connectWebSocket() {
         
         ws.onmessage = function(event) {
             try {
+                // Debug raw message
+                console.log('Raw message received:', event.data);
+                
                 const data = JSON.parse(event.data);
                 handleWebSocketMessage(data);
             } catch (error) {
-                console.error('Error parsing message:', error);
+                console.error('Error parsing message:', error, event.data);
+                
+                // Show error to user in a non-intrusive way
+                if (chatMessages) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'system-message error';
+                    errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> Message parsing error`;
+                    chatMessages.appendChild(errorDiv);
+                    
+                    // Remove after 5 seconds
+                    setTimeout(() => {
+                        errorDiv.remove();
+                    }, 5000);
+                }
             }
         };
     } catch (error) {
@@ -190,9 +206,15 @@ function connectWebSocket() {
     }
 }
 
-// Handle WebSocket messages
+// Handle WebSocket messages - IMPROVED WITH BETTER VALIDATION
 function handleWebSocketMessage(data) {
-    console.log('Received message:', data); // For debugging
+    console.log('Received message:', data);
+    
+    // Validate message structure first
+    if (!data || typeof data !== 'object' || !data.type) {
+        console.log('Received invalid message format:', data);
+        return;
+    }
     
     switch (data.type) {
         case 'welcome':
@@ -200,15 +222,21 @@ function handleWebSocketMessage(data) {
             break;
             
         case 'active_users':
-            updateActiveUsersCount(data.count);
+            if (typeof data.count === 'number') {
+                updateActiveUsersCount(data.count);
+            }
             break;
             
         case 'match_found':
-            handleMatchFound(data.partner);
+            if (data.partner && data.partner.username) {
+                handleMatchFound(data.partner);
+            }
             break;
             
         case 'message':
-            handleIncomingMessage(data);
+            if (data.sender && data.text) {
+                handleIncomingMessage(data);
+            }
             break;
             
         case 'user_left':
@@ -216,7 +244,9 @@ function handleWebSocketMessage(data) {
             break;
             
         case 'error':
-            handleError(data.message);
+            if (data.message) {
+                handleError(data.message);
+            }
             break;
             
         case 'ping':
@@ -233,11 +263,15 @@ function handleWebSocketMessage(data) {
             break;
             
         case 'queue_position':
-            handleQueuePosition(data.position, data.total);
+            if (typeof data.position === 'number' && typeof data.total === 'number') {
+                handleQueuePosition(data.position, data.total);
+            }
             break;
             
         case 'queue_update':
-            handleQueueUpdate(data.position, data.total, data.estimatedTime);
+            if (typeof data.position === 'number' && typeof data.total === 'number') {
+                handleQueueUpdate(data.position, data.total, data.estimatedTime);
+            }
             break;
             
         default:
@@ -287,7 +321,7 @@ function handleQueueUpdate(position, total, estimatedTime) {
         progressText.textContent = `Position in queue: ${position} of ${total}`;
     }
     
-    if (waitingStatus) {
+    if (waitingStatus && estimatedTime) {
         const minutes = Math.floor(estimatedTime / 60);
         const seconds = estimatedTime % 60;
         
@@ -328,7 +362,7 @@ function handleIncomingMessage(data) {
         sender: data.sender,
         text: data.text,
         type: 'received',
-        timestamp: new Date(data.timestamp),
+        timestamp: new Date(data.timestamp || Date.now()),
         id: data.id || Date.now()
     };
     
@@ -370,15 +404,23 @@ function handleTypingStop() {
     }
 }
 
-// Send WebSocket message
+// Send WebSocket message - IMPROVED WITH ERROR HANDLING
 function sendWebSocketMessage(type, data = {}) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         try {
-            ws.send(JSON.stringify({
+            const message = {
                 type,
                 ...data,
                 timestamp: Date.now()
-            }));
+            };
+            
+            // Validate message before sending
+            if (!message.type) {
+                console.error('Cannot send message without type');
+                return;
+            }
+            
+            ws.send(JSON.stringify(message));
         } catch (error) {
             console.error('Error sending message:', error);
         }
@@ -612,197 +654,226 @@ function rematch() {
     
     // Request to find a new partner
     sendWebSocketMessage('find_partner');
+}
+
+// Go back to home page
+function goHome() {
+    isConnected = false;
+    if (waitingTimer) clearTimeout(waitingTimer);
+    if (progressInterval) clearInterval(progressInterval);
+    showPage('entrance');
+}
+
+// Export chat history
+function exportChatHistory() {
+    if (chatHistory.length === 0) {
+        showError('No chat history to export');
+        return;
     }
     
-    // Go back to home page
-    function goHome() {
-        isConnected = false;
-        if (waitingTimer) clearTimeout(waitingTimer);
-        if (progressInterval) clearInterval(progressInterval);
-        showPage('entrance');
-    }
+    let exportData = `POPCHAT Conversation History\n`;
+    exportData += `Date: ${new Date().toLocaleString()}\n`;
+    exportData += `Participants: ${currentUser} and ${partner}\n`;
+    exportData += `Messages:\n\n`;
     
-    // Export chat history
-    function exportChatHistory() {
-        if (chatHistory.length === 0) {
-            showError('No chat history to export');
-            return;
-        }
-        
-        let exportData = `POPCHAT Conversation History\n`;
-        exportData += `Date: ${new Date().toLocaleString()}\n`;
-        exportData += `Participants: ${currentUser} and ${partner}\n`;
-        exportData += `Messages:\n\n`;
-        
-        chatHistory.forEach(msg => {
-            const time = msg.timestamp.toLocaleTimeString();
-            exportData += `[${time}] ${msg.sender}: ${msg.text}\n`;
-        });
-        
-        const blob = new Blob([exportData], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `popchat_${new Date().getTime()}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-    
-    // Cancel reply
-    function cancelReply() {
-        replyingTo = null;
-        if (replyIndicator) {
-            replyIndicator.style.display = 'none';
-        }
-    }
-    
-    // Highlight a message that was replied to
-    function highlightRepliedMessage(messageId) {
-        const messageElement = messageElements[messageId];
-        if (messageElement) {
-            messageElement.classList.add('highlight');
-            
-            // Scroll to the message
-            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            
-            // Remove highlight after 3 seconds
-            setTimeout(() => {
-                messageElement.classList.remove('highlight');
-            }, 3000);
-        }
-    }
-    
-    // Add a message to the chat
-    function addMessage(sender, text, type, replyTo = null, messageId = null, isError = false) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message', type);
-        if (isError) {
-            messageElement.classList.add('error');
-        }
-        
-        if (messageId !== null) {
-            messageElement.dataset.messageId = messageId;
-            messageElements[messageId] = messageElement;
-        }
-        
-        if (type === 'system') {
-            messageElement.innerHTML = `<i class="fas fa-info-circle"></i> ${text}`;
-            if (isError) {
-                messageElement.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${text}`;
-            }
-        } else {
-            let messageHTML = '';
-            
-            if (type === 'received') {
-                messageHTML += `<div class="message-username">${sender}</div>`;
-            }
-            
-            // Add reply reference if this is a reply
-            if (replyTo) {
-                messageHTML += `<div class="reply-reference">Replying to: ${replyTo.sender}</div>`;
-                
-                // Add click event to highlight the original message
-                messageElement.addEventListener('click', function() {
-                    highlightRepliedMessage(replyTo.id);
-                });
-            }
-            
-            // Preserve line breaks in messages
-            const formattedText = text.replace(/\n/g, '<br>');
-            messageHTML += formattedText;
-            
-            // Add timestamp
-            const now = new Date();
-            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            messageHTML += `<div class="message-time">${timeString}</div>`;
-            
-            messageElement.innerHTML = messageHTML;
-            
-            // Add long press event for reply (only for received messages)
-            if (type === 'received') {
-                let pressTimer;
-                
-                const startPress = () => {
-                    pressTimer = setTimeout(() => {
-                        replyingTo = {
-                            sender: sender,
-                            text: text,
-                            id: messageId
-                        };
-                        if (replyUsername) replyUsername.textContent = `${sender}`;
-                        if (replyText) replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
-                        if (replyIndicator) replyIndicator.style.display = 'flex';
-                    }, 500);
-                };
-                
-                const endPress = () => {
-                    clearTimeout(pressTimer);
-                };
-                
-                messageElement.addEventListener('mousedown', startPress);
-                messageElement.addEventListener('mouseup', endPress);
-                messageElement.addEventListener('mouseleave', endPress);
-                messageElement.addEventListener('touchstart', startPress);
-                messageElement.addEventListener('touchend', endPress);
-                messageElement.addEventListener('touchcancel', endPress);
-            }
-        }
-        
-        if (chatMessages) {
-            // Insert before typing indicator
-            chatMessages.insertBefore(messageElement, typingIndicator);
-            
-            // Scroll to bottom
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-    }
-    
-    // Show specific page
-    function showPage(pageName) {
-        // Hide all pages
-        for (const page in pages) {
-            if (pages[page]) {
-                pages[page].classList.remove('active');
-            }
-        }
-        
-        // Show requested page
-        if (pages[pageName]) {
-            pages[pageName].classList.add('active');
-        }
-        
-        // Focus on input if we're on the chat page
-        if (pageName === 'chat') {
-            setTimeout(() => {
-                if (messageInput) messageInput.focus();
-            }, 100);
-        }
-        
-        // Reset progress bar if leaving waiting page
-        if (pageName !== 'waiting' && progressBar) {
-            clearInterval(progressInterval);
-            progressBar.style.width = '0%';
-        }
-        
-        // Hide typing indicator when changing pages
-        if (pageName !== 'chat') {
-            handleTypingStop();
-        }
-        
-        // Hide menu when changing pages
-        if (menuContent) {
-            menuContent.style.display = 'none';
-        }
-    }
-    
-    // Initialize the app when DOM is loaded
-    document.addEventListener('DOMContentLoaded', init);
-    
-    // Handle page refresh/closing
-    window.addEventListener('beforeunload', () => {
-        if (isConnected) {
-            sendWebSocketMessage('leave_chat');
-        }
+    chatHistory.forEach(msg => {
+        const time = msg.timestamp.toLocaleTimeString();
+        exportData += `[${time}] ${msg.sender}: ${msg.text}\n`;
     });
+    
+    const blob = new Blob([exportData], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `popchat_${new Date().getTime()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Cancel reply
+function cancelReply() {
+    replyingTo = null;
+    if (replyIndicator) {
+        replyIndicator.style.display = 'none';
+    }
+}
+
+// Highlight a message that was replied to
+function highlightRepliedMessage(messageId) {
+    const messageElement = messageElements[messageId];
+    if (messageElement) {
+        messageElement.classList.add('highlight');
+        
+        // Scroll to the message
+        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Remove highlight after 3 seconds
+        setTimeout(() => {
+            messageElement.classList.remove('highlight');
+        }, 3000);
+    }
+}
+
+// Add a message to the chat
+function addMessage(sender, text, type, replyTo = null, messageId = null, isError = false) {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', type);
+    if (isError) {
+        messageElement.classList.add('error');
+    }
+    
+    if (messageId !== null) {
+        messageElement.dataset.messageId = messageId;
+        messageElements[messageId] = messageElement;
+    }
+    
+    if (type === 'system') {
+        messageElement.innerHTML = `<i class="fas fa-info-circle"></i> ${text}`;
+        if (isError) {
+            messageElement.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${text}`;
+        }
+    } else {
+        let messageHTML = '';
+        
+        if (type === 'received') {
+            messageHTML += `<div class="message-username">${sender}</div>`;
+        }
+        
+                // Add reply reference if this is a reply
+        if (replyTo) {
+            messageHTML += `<div class="reply-reference">Replying to: ${replyTo.sender}</div>`;
+            
+            // Add click event to highlight the original message
+            messageElement.addEventListener('click', function() {
+                highlightRepliedMessage(replyTo.id);
+            });
+        }
+        
+        // Preserve line breaks in messages
+        const formattedText = text.replace(/\n/g, '<br>');
+        messageHTML += formattedText;
+        
+        // Add timestamp
+        const now = new Date();
+        const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        messageHTML += `<div class="message-time">${timeString}</div>`;
+        
+        messageElement.innerHTML = messageHTML;
+        
+        // Add long press event for reply (only for received messages)
+        if (type === 'received') {
+            let pressTimer;
+            
+            const startPress = () => {
+                pressTimer = setTimeout(() => {
+                    replyingTo = { 
+                        sender: sender, 
+                        text: text,
+                        id: messageId
+                    };
+                    if (replyUsername) replyUsername.textContent = `${sender}`;
+                    if (replyText) replyText.textContent = text.length > 30 ? text.substring(0, 30) + '...' : text;
+                    if (replyIndicator) replyIndicator.style.display = 'flex';
+                }, 500);
+            };
+            
+            const endPress = () => {
+                clearTimeout(pressTimer);
+            };
+            
+            messageElement.addEventListener('mousedown', startPress);
+            messageElement.addEventListener('mouseup', endPress);
+            messageElement.addEventListener('mouseleave', endPress);
+            messageElement.addEventListener('touchstart', startPress);
+            messageElement.addEventListener('touchend', endPress);
+            messageElement.addEventListener('touchcancel', endPress);
+        }
+    }
+    
+    if (chatMessages) {
+        // Insert before typing indicator
+        chatMessages.insertBefore(messageElement, typingIndicator);
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+}
+
+// Show specific page
+function showPage(pageName) {
+    // Hide all pages
+    for (const page in pages) {
+        if (pages[page]) {
+            pages[page].classList.remove('active');
+        }
+    }
+    
+    // Show requested page
+    if (pages[pageName]) {
+        pages[pageName].classList.add('active');
+    }
+    
+    // Focus on input if we're on the chat page
+    if (pageName === 'chat') {
+        setTimeout(() => {
+            if (messageInput) messageInput.focus();
+        }, 100);
+    }
+    
+    // Reset progress bar if leaving waiting page
+    if (pageName !== 'waiting' && progressBar) {
+        clearInterval(progressInterval);
+        progressBar.style.width = '0%';
+    }
+    
+    // Hide typing indicator when changing pages
+    if (pageName !== 'chat') {
+        handleTypingStop();
+    }
+    
+    // Hide menu when changing pages
+    if (menuContent) {
+        menuContent.style.display = 'none';
+    }
+}
+
+// Initialize the app when DOM is loaded
+document.addEventListener('DOMContentLoaded', init);
+
+// Handle page refresh/closing
+window.addEventListener('beforeunload', () => {
+    if (isConnected) {
+        sendWebSocketMessage('leave_chat');
+    }
+});
+
+// Additional function to handle connection issues
+function checkConnectionQuality() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.log('WebSocket is not connected, attempting to reconnect...');
+        connectWebSocket();
+        return;
+    }
+    
+    // Check if messages are being received properly
+    const now = Date.now();
+    const lastMessageTime = localStorage.getItem('lastMessageTime');
+    
+    if (lastMessageTime && now - parseInt(lastMessageTime) > 30000) {
+        // No messages received in 30 seconds, might be connection issue
+        console.log('No messages received in 30 seconds, reconnecting...');
+        connectWebSocket();
+    }
+}
+
+// Periodically check connection quality
+setInterval(checkConnectionQuality, 15000); // Check every 15 seconds
+
+// Track last message time
+const originalHandleWebSocketMessage = handleWebSocketMessage;
+handleWebSocketMessage = function(data) {
+    localStorage.setItem('lastMessageTime', Date.now().toString());
+    return originalHandleWebSocketMessage(data);
+};
