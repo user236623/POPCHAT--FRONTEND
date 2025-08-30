@@ -48,7 +48,7 @@ const muteBtn = document.getElementById('mute-btn');
 
 // Incoming Call Elements
 const incomingCallModal = document.getElementById('incoming-call-modal');
-const callerName = document.getElementById('caller-name');
+const callerNameElement = document.getElementById('caller-name');
 const acceptCallBtn = document.getElementById('accept-call-btn');
 const rejectCallBtn = document.getElementById('reject-call-btn');
 
@@ -171,7 +171,7 @@ function connectWebSocket() {
         // For local development vs production
         const wsUrl = host === 'localhost' 
             ? `${protocol}//localhost:3000` 
-            : `wss://popchat-eqgk.onrender.com`;
+            : `${protocol}//${host}${port}`;
         
         console.log('Connecting to WebSocket at:', wsUrl);
         
@@ -782,6 +782,9 @@ function initiateVoiceCall() {
     // Hide menu
     menuContent.style.display = 'none';
     
+    // Add call started message in chat
+    addMessage('System', `You started a voice call with ${partner}...`, 'system');
+    
     // Set up call page
     callPartnerName.textContent = partner;
     callStatus.textContent = 'Calling...';
@@ -804,6 +807,7 @@ function initiateVoiceCall() {
         if (callActive) {
             callStatus.textContent = 'Ringing...';
             callStatus.classList.add('ringing');
+            addMessage('System', `Calling ${partner}...`, 'system');
         }
     }, 2000);
 }
@@ -811,7 +815,8 @@ function initiateVoiceCall() {
 function backToChat() {
     if (callActive) {
         showPage('chat');
-        // Keep call active in background
+        // Keep call active in background - just minimize the call interface
+        addMessage('System', 'Call is still active in background', 'system');
     }
 }
 
@@ -821,14 +826,11 @@ function hangUpCall() {
         reason: 'user_hangup'
     });
     
-    endCall();
+    // Add call ended message
+    addMessage('System', 'You ended the voice call', 'system');
     
-    // Show appropriate page based on current state
-    if (isConnected) {
-        showPage('chat');
-    } else {
-        showPage('entrance');
-    }
+    endCall();
+    showPage('chat');
 }
 
 function toggleMute() {
@@ -865,9 +867,14 @@ function endCall() {
     callStatus.textContent = 'Call Ended';
     callStatus.classList.remove('ringing', 'connected');
     callStatus.classList.add('ended');
+    callTimer.textContent = '00:00';
     
     // Update menu notification
     updateMenuCallNotification(false);
+    
+    // Stop any call sounds
+    stopCallSound();
+    stopVibration();
 }
 
 function startCallTimer() {
@@ -891,7 +898,7 @@ function showIncomingCallNotification(callerName) {
     stopCallSound();
     
     // Update modal content
-    callerName.textContent = `${callerName} is calling you`;
+    callerNameElement.textContent = `${callerName} is calling you...`;
     
     // Show notification
     incomingCallModal.style.display = 'block';
@@ -902,13 +909,16 @@ function showIncomingCallNotification(callerName) {
     
     isRinging = true;
     
-    // Update menu notification
+    // Update menu notification with pulsating phone icon
     updateMenuCallNotification(true);
     
-    // Auto-reject after 30 seconds if not answered
+    // Auto-reject after 30 seconds if not answered (missed call)
     callNotificationTimer = setTimeout(() => {
         if (isRinging) {
-            rejectIncomingCall();
+            addMessage('System', `Missed voice call from ${partner}`, 'system');
+            sendWebSocketMessage('call_rejected', { reason: 'timeout' });
+            stopCallNotification();
+            showPage('chat');
         }
     }, 30000);
 }
@@ -918,6 +928,9 @@ function acceptIncomingCall() {
     
     stopCallNotification();
     sendWebSocketMessage('call_accepted');
+    
+    // Add call accepted message
+    addMessage('System', `You accepted the voice call`, 'system');
     
     // Set up call page
     callPartnerName.textContent = partner;
@@ -934,6 +947,9 @@ function acceptIncomingCall() {
 function rejectIncomingCall() {
     stopCallNotification();
     sendWebSocketMessage('call_rejected', { reason: 'declined' });
+    
+    // Add call rejected message
+    addMessage('System', `You declined the voice call`, 'system');
     showPage('chat');
 }
 
@@ -943,13 +959,13 @@ function stopCallNotification() {
     stopCallSound();
     stopVibration();
     
+    // Remove call notification from menu
+    updateMenuCallNotification(false);
+    
     if (callNotificationTimer) {
         clearTimeout(callNotificationTimer);
         callNotificationTimer = null;
     }
-    
-    // Update menu notification
-    updateMenuCallNotification(false);
 }
 
 function startCallSound() {
@@ -1028,6 +1044,10 @@ function stopVibration() {
 // Call Event Handlers
 function handleIncomingCall(data) {
     incomingCallData = data;
+    
+    // Add incoming call notification in chat
+    addMessage('System', `Incoming voice call from ${partner}...`, 'system');
+    
     showIncomingCallNotification(partner);
 }
 
@@ -1037,12 +1057,25 @@ function handleCallAccepted() {
         callStatus.classList.remove('ringing');
         callStatus.classList.add('connected');
         startCallTimer();
+        
+        // Add call connected message
+        addMessage('System', `${partner} accepted the voice call`, 'system');
     }
 }
 
 function handleCallRejected(reason) {
     if (callActive) {
         callStatus.textContent = 'Call Rejected';
+        
+        let rejectMessage = 'Call was rejected';
+        if (reason === 'declined') {
+            rejectMessage = `${partner} declined your call`;
+        } else if (reason === 'timeout') {
+            rejectMessage = `${partner} didn't answer`;
+        }
+        
+        addMessage('System', rejectMessage, 'system');
+        
         endCall();
         setTimeout(() => {
             showPage('chat');
@@ -1052,12 +1085,17 @@ function handleCallRejected(reason) {
 
 function handleCallEnded(reason) {
     if (callActive) {
-        callStatus.textContent = 'Call Ended - ' + (reason === 'user_hangup' ? 'Partner hung up' : 'Call ended');
+        let endMessage = 'Call ended';
+        if (reason === 'user_hangup') {
+            endMessage = `${partner} ended the call`;
+        } else if (reason === 'user_disconnected') {
+            endMessage = `${partner} disconnected from the call`;
+        }
+        
+        callStatus.textContent = 'Call Ended';
+        addMessage('System', endMessage, 'system');
+        
         endCall();
-        
-        // Show notification in chat
-        addMessage('System', `Voice call ended: ${reason === 'user_hangup' ? 'Partner ended the call' : 'Call completed'}`, 'system');
-        
         setTimeout(() => {
             showPage('chat');
         }, 2000);
@@ -1066,7 +1104,6 @@ function handleCallEnded(reason) {
 
 function handleCallMuteUpdate(muted) {
     // Update UI to show partner's mute status
-    // This would show a mute indicator near partner's name in a real app
     console.log(`Partner is ${muted ? 'muted' : 'unmuted'}`);
 }
 
@@ -1075,8 +1112,10 @@ function updateMenuCallNotification(hasCall) {
     if (menuBtn) {
         if (hasCall) {
             menuBtn.innerHTML = '<i class="fas fa-phone" style="color: #4CAF50; animation: pulse-glow 1s infinite;"></i>';
+            menuBtn.classList.add('call-notification-active');
         } else {
             menuBtn.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+            menuBtn.classList.remove('call-notification-active');
         }
     }
 }
