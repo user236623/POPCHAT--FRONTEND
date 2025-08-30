@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script type='text/javascript' src='//keeptraumatic.com/f1/67/96/f167965a328079916999e5fac5149431.js'></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>POPCHAT - Random Chat with Strangers</title>
@@ -24,25 +25,6 @@
                 </div>
             </div>
             <p class="donation-note">Your support helps keep POPCHAT running and improving!</p>
-        </div>
-    </div>
-
-    <!-- Incoming Call Modal -->
-    <div id="incoming-call-modal" class="modal">
-        <div class="modal-content call-modal">
-            <div class="call-notification">
-                <div class="call-avatar-notification">👤</div>
-                <h3>Incoming Voice Call</h3>
-                <p id="caller-name">Someone is calling you</p>
-                <div class="call-notification-buttons">
-                    <button class="btn accept-call-btn" id="accept-call-btn">
-                        <i class="fas fa-phone"></i> Accept
-                    </button>
-                    <button class="btn reject-call-btn" id="reject-call-btn">
-                        <i class="fas fa-phone-slash"></i> Decline
-                    </button>
-                </div>
-            </div>
         </div>
     </div>
     
@@ -78,10 +60,14 @@
             <div class="waiting-progress">
                 <div class="progress-bar" id="progress-bar"></div>
             </div>
+            <div class="progress-text" id="progress-text">Connecting to server...</div>
             <div class="waiting-dots">
                 <div class="dot"></div>
                 <div class="dot"></div>
                 <div class="dot"></div>
+            </div>
+            <div class="waiting-status" id="waiting-status">
+                <!-- Queue information will be inserted here -->
             </div>
         </div>
         
@@ -97,7 +83,8 @@
                     <div class="menu-container">
                         <button class="menu-btn"><i class="fas fa-ellipsis-v"></i></button>
                         <div class="menu-content">
-                            <a id="voice-call-btn"><i class="fas fa-phone"></i> Voice Call</a>
+                            <a id="export-chat-btn"><i class="fas fa-download"></i> Export Chat</a>
+                            <a id="report-btn"><i class="fas fa-flag"></i> Report User</a>
                         </div>
                     </div>
                 </div>
@@ -147,44 +134,6 @@
                     
                     <button class="icon-btn send-btn" id="send-btn" title="Send message">
                         <i class="fas fa-paper-plane"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Call Page -->
-        <div class="page" id="call-page">
-            <div class="call-container">
-                <div class="call-header">
-                    <div class="user-info">
-                        <div class="user-avatar">👤</div>
-                        <span id="call-partner-name">Partner</span>
-                        <span class="online-dot"></span>
-                    </div>
-                </div>
-                
-                <div class="call-status-container">
-                    <div class="call-avatar-large">
-                        👤
-                    </div>
-                    <div class="call-status" id="call-status">Calling...</div>
-                    <div class="call-timer" id="call-timer">00:00</div>
-                </div>
-                
-                <div class="call-controls">
-                    <button class="call-btn back-chat-btn" id="back-chat-btn" title="Back to Chat">
-                        <i class="fas fa-comment"></i>
-                        <span>Back Chat</span>
-                    </button>
-                    
-                    <button class="call-btn hangup-btn" id="hangup-btn" title="Hang Up">
-                        <i class="fas fa-phone-slash"></i>
-                        <span>Hang Up</span>
-                    </button>
-                    
-                    <button class="call-btn mute-btn" id="mute-btn" title="Mute">
-                        <i class="fas fa-microphone"></i>
-                        <span>Mute</span>
                     </button>
                 </div>
             </div>
