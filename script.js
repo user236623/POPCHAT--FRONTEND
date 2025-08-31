@@ -55,6 +55,8 @@ let typingTimer = null;
 let partnerTyping = false;
 let queuePosition = 0;
 let queueTotal = 0;
+let activeUsersUpdateInterval = null;
+const ACTIVE_UPDATE_INTERVAL = 3000; // Update every 3 seconds
 
 // Initialize the app
 function init() {
@@ -106,6 +108,9 @@ function init() {
         });
     }
     
+    // Add page visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
     // Initialize WebSocket connection
     connectWebSocket();
     
@@ -126,20 +131,13 @@ function closeDonationModal() {
     qrModal.style.display = 'none';
 }
 
-// Connect to WebSocket server - IMPROVED WITH BETTER ERROR HANDLING
+// Connect to WebSocket server - UPDATED WITH CORRECT URL
 function connectWebSocket() {
     try {
-        // Use secure WebSocket for HTTPS, regular for HTTP
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname;
-        const port = window.location.port ? `:${window.location.port}` : '';
+        // TAMA NA URL PARA SA RENDER BACKEND
+        const wsUrl = 'wss://popchat-eqgk.onrender.com';
         
-        // For local development vs production
-        const wsUrl = host === 'localhost' 
-            ? `${protocol}//localhost:3000` 
-            : `wss://popchat-eqgk.onrender.com`;
-        
-        console.log('Connecting to WebSocket at:', wsUrl);
+        console.log('✅ Connecting to WebSocket at:', wsUrl);
         
         ws = new WebSocket(wsUrl);
         
@@ -148,8 +146,8 @@ function connectWebSocket() {
             reconnectAttempts = 0;
             updateConnectionStatus(true);
             
-            // Update active users count
-            updateActiveUsers();
+            // Start active users updates
+            startActiveUsersUpdates();
             
             // If we have a username set, send it to the server
             if (currentUser) {
@@ -160,6 +158,9 @@ function connectWebSocket() {
         ws.onclose = function() {
             console.log('❌ Disconnected from server');
             updateConnectionStatus(false);
+            
+            // Stop active users updates
+            stopActiveUsersUpdates();
             
             // Try to reconnect with exponential backoff
             if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -178,7 +179,6 @@ function connectWebSocket() {
         
         ws.onmessage = function(event) {
             try {
-                // Debug raw message
                 console.log('Raw message received:', event.data);
                 
                 const data = JSON.parse(event.data);
@@ -206,81 +206,131 @@ function connectWebSocket() {
     }
 }
 
+// Add these new functions for active users updates
+function startActiveUsersUpdates() {
+    // Clear any existing interval
+    stopActiveUsersUpdates();
+    
+    // Request active users count immediately
+    updateActiveUsers();
+    
+    // Set up periodic updates
+    activeUsersUpdateInterval = setInterval(() => {
+        updateActiveUsers();
+    }, ACTIVE_UPDATE_INTERVAL);
+}
+
+function stopActiveUsersUpdates() {
+    if (activeUsersUpdateInterval) {
+        clearInterval(activeUsersUpdateInterval);
+        activeUsersUpdateInterval = null;
+    }
+}
+
+// Add this new function to handle page visibility
+function handleVisibilityChange() {
+    if (document.hidden) {
+        // Page is hidden, reduce update frequency
+        stopActiveUsersUpdates();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            activeUsersUpdateInterval = setInterval(() => {
+                updateActiveUsers();
+            }, 10000); // Update every 10 seconds when tab is hidden
+        }
+    } else {
+        // Page is visible, resume normal updates
+        startActiveUsersUpdates();
+    }
+}
+
 // Handle WebSocket messages - IMPROVED WITH BETTER VALIDATION
 function handleWebSocketMessage(data) {
     console.log('Received message:', data);
     
     // Validate message structure first
-    if (!data || typeof data !== 'object' || !data.type) {
+    if (!data || typeof data !== 'object') {
         console.log('Received invalid message format:', data);
         return;
     }
     
-    switch (data.type) {
-        case 'welcome':
-            console.log('Server:', data.message);
-            break;
-            
-        case 'active_users':
-            if (typeof data.count === 'number') {
-                updateActiveUsersCount(data.count);
-            }
-            break;
-            
-        case 'match_found':
-            if (data.partner && data.partner.username) {
-                handleMatchFound(data.partner);
-            }
-            break;
-            
-        case 'message':
-            if (data.sender && data.text) {
-                handleIncomingMessage(data);
-            }
-            break;
-            
-        case 'user_left':
-            handleUserLeft();
-            break;
-            
-        case 'error':
-            if (data.message) {
-                handleError(data.message);
-            }
-            break;
-            
-        case 'ping':
-            // Respond to ping
-            sendWebSocketMessage('pong');
-            break;
-            
-        case 'typing_start':
-            handleTypingStart();
-            break;
-            
-        case 'typing_stop':
-            handleTypingStop();
-            break;
-            
-        case 'queue_position':
-            if (typeof data.position === 'number' && typeof data.total === 'number') {
-                handleQueuePosition(data.position, data.total);
-            }
-            break;
-            
-        case 'queue_update':
-            if (typeof data.position === 'number' && typeof data.total === 'number') {
-                handleQueueUpdate(data.position, data.total, data.estimatedTime);
-            }
-            break;
-            
-        default:
-            console.log('Unknown message type:', data.type, data);
-            // Instead of showing error, handle gracefully
-            if (data.text) {
-                // If it has text content, display it as a system message
-                addMessage('System', data.text, 'system');
-            }
+    try {
+        switch (data.type) {
+            case 'welcome':
+                console.log('Server:', data.message);
+                if (data.userId) {
+                    // Store our user ID if provided
+                    currentUser = data.userId;
+                }
+                break;
+                
+            case 'active_users':
+                if (typeof data.count === 'number') {
+                    updateActiveUsersCount(data.count);
+                    
+                    // If we're on the entrance page, update the count display
+                    if (pages.entrance.classList.contains('active') && activeCountElement) {
+                        activeCountElement.textContent = `${data.count}+ Active Now`;
+                    }
+                }
+                break;
+                
+            case 'match_found':
+                if (data.partner && typeof data.partner === 'object') {
+                    handleMatchFound(data.partner);
+                }
+                break;
+                
+            case 'message':
+                if (data.text && typeof data.text === 'string') {
+                    handleIncomingMessage(data);
+                }
+                break;
+                
+            case 'user_left':
+                handleUserLeft();
+                break;
+                
+            case 'error':
+                if (data.message) {
+                    handleError(data.message);
+                }
+                break;
+                
+            case 'ping':
+                // Respond to ping
+                sendWebSocketMessage('pong');
+                break;
+                
+            case 'typing_start':
+                handleTypingStart();
+                break;
+                
+            case 'typing_stop':
+                handleTypingStop();
+                break;
+                
+            case 'queue_position':
+                if (typeof data.position === 'number' && typeof data.total === 'number') {
+                    handleQueuePosition(data.position, data.total);
+                }
+                break;
+                
+            case 'queue_update':
+                if (typeof data.position === 'number' && typeof data.total === 'number') {
+                    handleQueueUpdate(data.position, data.total, data.estimatedTime);
+                }
+                break;
+                
+            default:
+                console.log('Unknown message type from server:', data.type);
+                // Handle unknown messages gracefully
+                if (data.text) {
+                    addMessage('System', data.text, 'system');
+                }
+        }
+    } catch (error) {
+        console.error('Error processing message:', error, data);
+        addMessage('System', 'Error processing message from server', 'system', true);
     }
 }
 
@@ -409,24 +459,38 @@ function sendWebSocketMessage(type, data = {}) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         try {
             const message = {
-                type,
-                ...data,
-                timestamp: Date.now()
+                type: type,
+                timestamp: Date.now(),
+                ...data
             };
             
             // Validate message before sending
-            if (!message.type) {
-                console.error('Cannot send message without type');
-                return;
+            if (!message.type || typeof message.type !== 'string') {
+                console.error('Cannot send message without valid type');
+                return false;
             }
             
-            ws.send(JSON.stringify(message));
+            const messageStr = JSON.stringify(message);
+            ws.send(messageStr);
+            return true;
         } catch (error) {
             console.error('Error sending message:', error);
+            addMessage('System', 'Failed to send message', 'system', true);
+            return false;
         }
     } else {
         console.warn('WebSocket is not connected');
         updateConnectionStatus(false);
+        
+        // Try to reconnect if not connected
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            const delay = Math.pow(2, reconnectAttempts) * 1000;
+            reconnectAttempts++;
+            console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+            
+            setTimeout(connectWebSocket, delay);
+        }
+        return false;
     }
 }
 
@@ -462,7 +526,9 @@ function updateConnectionStatus(online) {
 
 // Update active users count
 function updateActiveUsers() {
-    sendWebSocketMessage('get_active_users');
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        sendWebSocketMessage('get_active_users');
+    }
 }
 
 // Handle message input for typing indicator
@@ -741,7 +807,7 @@ function addMessage(sender, text, type, replyTo = null, messageId = null, isErro
             messageHTML += `<div class="message-username">${sender}</div>`;
         }
         
-                // Add reply reference if this is a reply
+        // Add reply reference if this is a reply
         if (replyTo) {
             messageHTML += `<div class="reply-reference">Replying to: ${replyTo.sender}</div>`;
             
@@ -847,6 +913,7 @@ window.addEventListener('beforeunload', () => {
     if (isConnected) {
         sendWebSocketMessage('leave_chat');
     }
+    stopActiveUsersUpdates();
 });
 
 // Additional function to handle connection issues
